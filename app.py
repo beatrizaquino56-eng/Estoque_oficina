@@ -41,13 +41,11 @@ if modulo == "👥 Clientes & Veículos":
             nome_cliente = st.text_input("Nome do Cliente", placeholder="Ex: João Silva")
             veiculo = st.text_input("Veículo (Modelo/Ano)", placeholder="Ex: Gol G6 2014")
             
-            # Ajuste: Letras da placa entram automaticamente em Maiúsculas
             placa_input = st.text_input("Placa do Carro", placeholder="Ex: ABC1234 ou ABC1D23")
             placa = placa_input.upper().strip() 
             
         with col2:
             telefone_input = st.text_input("Número de Telefone (com DDD)", placeholder="Ex: 16999999999")
-            # Aplica a máscara automaticamente ao salvar
             telefone = formatar_telefone(telefone_input)
             
             defeito = st.text_area("Defeito Relatado / Sintomas", placeholder="Ex: Barulho na suspensão dianteira...")
@@ -60,7 +58,7 @@ if modulo == "👥 Clientes & Veículos":
                     "nome_cliente": nome_cliente,
                     "veiculo": veiculo,
                     "placa": placa,
-                    "telefone": telefone,
+                    "telefone": telephone,
                     "defeito": defeito,
                     "status": "Aguardando Diagnóstico"
                 }
@@ -76,39 +74,59 @@ if modulo == "👥 Clientes & Veículos":
         dados_clientes = pd.DataFrame(resposta_clientes.data)
         
         if not dados_clientes.empty:
-            busca_pacio = st.text_input("🔍 Buscar por Nome do Cliente ou Placa:", placeholder="Digite para filtrar...")
+            # Filtros na parte superior da aba
+            c_busca, c_filtro = st.columns([2, 1])
+            
+            with c_busca:
+                busca_pacio = st.text_input("🔍 Buscar por Nome do Cliente ou Placa:", placeholder="Digite para filtrar...")
+            
+            with c_filtro:
+                # 📊 NOVO FILTRO POR STATUS ADICIONADO AQUI!
+                filtro_status = st.selectbox(
+                    "🚦 Filtrar por Status:",
+                    ["Todos", "Aguardando Diagnóstico", "Em Manutenção", "Aguardando Peças", "Pronto / Retirada"]
+                )
+            
+            # Aplica o filtro de busca por texto (Nome ou Placa) se houver
             if busca_pacio:
                 dados_clientes = dados_clientes[
                     dados_clientes['nome_cliente'].str.contains(busca_pacio, case=False, na=False) |
                     dados_clientes['placa'].str.contains(busca_pacio, case=False, na=False)
                 ]
+                
+            # Aplica o filtro por Status se for diferente de "Todos"
+            if filtro_status != "Todos":
+                dados_clientes = dados_clientes[dados_clientes['status'] == filtro_status]
             
             st.markdown("---")
-            # NOVO LAYOUT: Em vez de tabela pequena, exibe cartões grandes e fáceis de ler
-            for index, row in dados_clientes.iterrows():
-                # Define uma cor amigável baseada no status
-                status_atual = row['status']
-                cor_status = "🟡" if status_atual == "Aguardando Diagnóstico" else "🔵" if status_atual == "Em Manutenção" else "🟠" if status_atual == "Aguardando Peças" else "🟢"
-                
-                with st.expander(f"{cor_status} {row['veiculo']} — Placa: {row['placa']} ({row['nome_cliente']})", expanded=True):
-                    st.markdown(f"**👤 Cliente:** {row['nome_cliente']} | **📞 Tel:** {row['telefone']}")
-                    st.markdown(f"**🛠️ Defeito Relatado:** {row['defeito']}")
-                    st.markdown(f"**📌 Status Atual:** `{status_atual}`")
+            
+            # Se após os filtros a lista ficar vazia, mostra um aviso amigável
+            if dados_clientes.empty:
+                st.info(f"Nenhum veículo encontrado com o status '{filtro_status}' ou termo pesquisado.")
+            else:
+                # Exibe os cartões grandes e fáceis de ler dos veículos filtrados
+                for index, row in dados_clientes.iterrows():
+                    status_atual = row['status']
+                    cor_status = "🟡" if status_atual == "Aguardando Diagnóstico" else "🔵" if status_atual == "Em Manutenção" else "¼" if status_atual == "Aguardando Peças" else "🟢"
                     
-                    # Ações direto no cartão do veículo
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        novo_status = st.selectbox("Alterar Status para:", ["Aguardando Diagnóstico", "Em Manutenção", "Aguardando Peças", "Pronto / Retirada"], key=f"status_{row['id']}")
-                        if st.button("🔄 Atualizar", key=f"btn_status_{row['id']}"):
-                            supabase.table("clientes").update({"status": novo_status}).eq("id", row['id']).execute()
-                            st.success("Status Atualizado!")
-                            st.rerun()
-                    with c2:
-                        st.write("")
-                        if st.button("❌ Apagar Registro", key=f"btn_del_{row['id']}"):
-                            supabase.table("clientes").delete().eq("id", row['id']).execute()
-                            st.success("Removido!")
-                            st.rerun()
+                    with st.expander(f"{cor_status} {row['veiculo']} — Placa: {row['placa']} ({row['nome_cliente']})", expanded=True):
+                        st.markdown(f"**👤 Cliente:** {row['nome_cliente']} | **📞 Tel:** {row['telefone']}")
+                        st.markdown(f"**🛠️ Defeito Relatado:** {row['defeito']}")
+                        st.markdown(f"**📌 Status Atual:** `{status_atual}`")
+                        
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            novo_status = st.selectbox("Alterar Status para:", ["Aguardando Diagnóstico", "Em Manutenção", "Aguardando Peças", "Pronto / Retirada"], key=f"status_{row['id']}")
+                            if st.button("🔄 Atualizar", key=f"btn_status_{row['id']}"):
+                                supabase.table("clientes").update({"status": novo_status}).eq("id", row['id']).execute()
+                                st.success("Status Atualizado!")
+                                st.rerun()
+                        with c2:
+                            st.write("")
+                            if st.button("❌ Apagar Registro", key=f"btn_del_{row['id']}"):
+                                supabase.table("clientes").delete().eq("id", row['id']).execute()
+                                st.success("Removido!")
+                                st.rerun()
         else:
             st.info("Nenhum veículo no pátio atualmente.")
 
@@ -168,7 +186,7 @@ elif modulo == "📦 Gerenciar Estoque":
                 if st.button("Confirmar Entrada / Somar ao Estoque", key="btn_reposicao"):
                     nova_quantidade = int(qtd_atual_banco + qtd_novas_pecas)
                     supabase.table("estoque").update({"quantidade": nova_quantidade}).eq("id", id_produto_reposicao).execute()
-                    st.success("Estoque atualizado na Nuvem!")
+                    st.success("Estoque updated na Nuvem!")
                     st.rerun()
 
     with aba_saida:
