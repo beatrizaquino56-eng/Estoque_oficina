@@ -1,28 +1,14 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
+from supabase import create_client, Client
 
-# --- 1. CONFIGURAÇÃO DO BANCO DE DADOS (SQLite) ---
-conn = sqlite3.connect("estoque_oficina.db")
-cursor = conn.cursor()
+# --- 1. CONFIGURAÇÃO DE CONEXÃO COM O SUPABASE ---
+SUPABASE_URL = "https://lgpcpnxhkogtvhjtfwya.supabase.co"
+# Sua chave Publishable que você copiou do painel do Supabase
+SUPABASE_KEY = "sb_publishable_1kunRmsK4SdXCk849paiyg_1OaraKs_"
 
-# Atualizado: Criando a tabela já prevendo a coluna 'codigo_original'
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS produtos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT,
-    codigo_original TEXT,
-    marca TEXT,
-    quantidade INTEGER,
-    preco_custo REAL,
-    ncm TEXT,
-    cest TEXT,
-    csosn TEXT,
-    origem TEXT,
-    peso REAL
-)
-""")
-conn.commit()
+# Inicializa o cliente do Supabase
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 # --- 2. CRIAÇÃO DAS ABAS NA INTERFACE ---
@@ -49,7 +35,6 @@ with aba_entrada:
         col1, col2 = st.columns(2)
         with col1:
             nome_produto = st.text_input("Descrição do Produto", placeholder="Ex: Kit de Embreagem", key="add_nome")
-            # NOVO CAMPO ADICIONADO AQUI!
             codigo_original = st.text_input("Código Original / Nº Montadora", placeholder="Ex: 5Z0141025", key="add_cod_orig")
             marca = st.text_input("Marca/Fabricante", placeholder="Ex: LUK", key="add_marca")
             quantidade = st.number_input("Quantidade Inicial", min_value=0, value=0, step=1, key="add_qtd")
@@ -66,38 +51,48 @@ with aba_entrada:
             if nome_produto == "":
                 st.error("Por favor, digite o nome do produto antes de salvar!")
             else:
-                # Atualizado para incluir o codigo_original no INSERT
-                cursor.execute("""
-                INSERT INTO produtos (nome, codigo_original, marca, quantidade, preco_custo, ncm, cest, csosn, origem, peso)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (nome_produto, codigo_original, marca, quantidade, preco_custo, ncm, cest, csosn, origem, peso))
-                conn.commit()
-                st.success(f"Sucesso! O produto '{nome_produto}' foi salvo no banco de dados!")
+                # Monta o dicionário com os nomes exatos das colunas do Supabase
+                novo_produto = {
+                    "descricao": nome_produto, # Na nuvem criamos como 'descricao'
+                    "codigo_original": codigo_original,
+                    "marca": marca,
+                    "quantidade": int(quantidade),
+                    "ncm": ncm
+                    # Nota: Caso queira adicionar preco_custo, cest, csosn, origem ou peso futuramente no Supabase,
+                    # basta adicionar as colunas no painel do Supabase e incluí-las aqui.
+                }
+                
+                # Salva direto na nuvem!
+                supabase.table("estoque").insert(novo_produto).execute()
+                
+                st.success(f"Sucesso! O produto '{nome_produto}' foi salvo na Nuvem (Supabase)!")
                 st.rerun()
                 
     else:
         st.write("### 🔄 Reposição de Estoque Existente:")
         
-        dados_produtos = pd.read_sql_query("SELECT id, nome, quantidade FROM produtos ORDER BY nome ASC", conn)
+        # Busca os dados atualizados do Supabase para montar a lista
+        resposta_entrada = supabase.table("estoque").select("id, descricao, quantidade").order("descricao").execute()
+        dados_produtos = pd.DataFrame(resposta_entrada.data)
         
         if dados_produtos.empty:
             st.info("Nenhum produto cadastrado para receber reposição.")
         else:
-            opcoes_entrada = {f"{row['nome']} - Atual: {row['quantidade']}": row['id'] for index, row in dados_produtos.iterrows()}
+            opcoes_entrada = {f"{row['descricao']} - Atual: {row['quantidade']}": row['id'] for index, row in dados_produtos.iterrows()}
             selecao_entrada = st.selectbox("Escolha o produto que chegou na oficina:", list(opcoes_entrada.keys()), key="sel_reposicao")
             id_produto_reposicao = opcoes_entrada[selecao_entrada]
             
+            # Pega a quantidade atual que já estava no banco
+            qtd_atual_banco = dados_produtos[dados_produtos['id'] == id_produto_reposicao]['quantidade'].values[0]
             qtd_novas_pecas = st.number_input("Quantidade de peças que chegaram:", min_value=1, value=1, step=1, key="qtd_reposicao")
             
             if st.button("Confirmar Entrada / Somar ao Estoque", key="btn_reposicao"):
-                cursor.execute("""
-                UPDATE produtos 
-                SET quantidade = quantidade + ? 
-                WHERE id = ?
-                """, (qtd_novas_pecas, id_produto_reposicao))
-                conn.commit()
+                nova_quantidade = int(qtd_atual_banco + qtd_novas_pecas)
                 
-                st.success("Estoque atualizado! As novas unidades foram somadas com sucesso.")
+                # Atualiza na nuvem
+                supabase.table("estoque").update({"quantidade": nova_quantidade}).eq("id", id_produto_reposicao).execute()
+                
+                st.success("Estoque atualizado na Nuvem! As novas unidades foram somadas com sucesso.")
                 st.rerun()
 
 
@@ -105,12 +100,14 @@ with aba_entrada:
 with aba_saida:
     st.subheader("🛠️ Dar Baixa em Peça Utilizada")
     
-    dados_produtos_saida = pd.read_sql_query("SELECT id, nome, quantidade FROM produtos ORDER BY nome ASC", conn)
+    # Busca os dados atualizados do Supabase para a saída
+    resposta_saida = supabase.table("estoque").select("id, descricao, quantidade").order("descricao").execute()
+    dados_produtos_saida = pd.DataFrame(resposta_saida.data)
     
     if dados_produtos_saida.empty:
         st.info("Nenhum produto cadastrado no estoque para dar saída.")
     else:
-        opcoes_produtos = {f"{row['nome']} - (Disponível: {row['quantidade']})": row['id'] for index, row in dados_produtos_saida.iterrows()}
+        opcoes_produtos = {f"{row['descricao']} - (Disponível: {row['quantidade']})": row['id'] for index, row in dados_produtos_saida.iterrows()}
         
         selecao = st.selectbox("Selecione o Produto que vai sair:", list(opcoes_produtos.keys()), key="sel_saida")
         produto_id_selecionado = opcoes_produtos[selecao]
@@ -123,14 +120,12 @@ with aba_saida:
             if qtd_atual <= 0:
                 st.error("Não é possível dar saída! Este produto está com estoque zerado.")
             else:
-                cursor.execute("""
-                UPDATE produtos 
-                SET quantidade = quantidade - ? 
-                WHERE id = ?
-                """, (qtd_saida, produto_id_selecionado))
-                conn.commit()
+                nova_quantidade_saida = int(qtd_atual - qtd_saida)
                 
-                st.success("Baixa realizada com sucesso! O estoque foi atualizado.")
+                # Atualiza na nuvem dando a baixa
+                supabase.table("estoque").update({"quantidade": nova_quantidade_saida}).eq("id", produto_id_selecionado).execute()
+                
+                st.success("Baixa realizada com sucesso! O estoque foi atualizado na nuvem.")
                 st.rerun()
 
 
@@ -138,10 +133,16 @@ with aba_saida:
 st.markdown("---")
 st.subheader("📊 Relatório Atual de Estoque")
 
-dados_finais = pd.read_sql_query("SELECT * FROM produtos ORDER BY nome ASC", conn)
-if not dados_finais.empty:
-    st.dataframe(dados_finais)
-else:
-    st.info("O estoque está vazio.")
+# Busca tudo do Supabase para exibir na tabela final
+resposta_final = supabase.table("estoque").select("*").order("descricao").execute()
+dados_finais = pd.DataFrame(resposta_final.data)
 
-conn.close()
+if not dados_finais.empty:
+    # Organiza a ordem das colunas para ficar bonito no relatório
+    colunas_ordenadas = ["id", "codigo_original", "ncm", "descricao", "marca", "quantidade", "created_at"]
+    # Filtra apenas as colunas que realmente existem na tabela para evitar erros
+    colunas_existem = [c for c in colunas_ordenadas if c in dados_finais.columns]
+    
+    st.dataframe(dados_finais[colunas_existem], use_container_width=True)
+else:
+    st.info("O estoque na nuvem está vazio.")
