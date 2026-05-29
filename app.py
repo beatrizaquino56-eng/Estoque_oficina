@@ -35,7 +35,7 @@ def formatar_telefone(num):
         return f"({apenas_numeros[:2]}) {apenas_numeros[2:6]}-{apenas_numeros[6:]}"
     return num
 
-# Função Inteligente para gerar o PDF do Orçamento
+# Função Inteligente para gerar o PDF do Orçamento (CORRIGIDA)
 def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -47,7 +47,7 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
     elementos = []
     estilos = getSampleStyleSheet()
     
-    # Customização de estilos visuais para o PDF (Design Limpo e Elegante)
+    # Customização de estilos visuais
     estilo_titulo = ParagraphStyle(
         'TituloOficina',
         parent=estilos['Heading1'],
@@ -69,6 +69,14 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
         textColor=colors.HexColor("#222222"),
         spaceAfter=6
     )
+    # Novo estilo específico para aplicar o negrito correto dentro da tabela
+    estilo_tabela_bold = ParagraphStyle(
+        'TabelaBold',
+        parent=estilos['Normal'],
+        fontSize=10,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor("#111111")
+    )
     
     # 1. Cabeçalho da Empresa
     elementos.append(Paragraph("<b>LAUD CAMBIOS AUTO PEÇAS E MECÂNICA</b>", estilo_titulo))
@@ -83,7 +91,6 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
     elementos.append(Spacer(1, 15))
     
     # 3. Tabela de Peças e Serviços
-    # Cabeçalho da tabela
     dados_tabela = [["Item / Descrição da Peça", "Valor Unitário (R$)"]]
     
     total_geral = 0.0
@@ -91,32 +98,34 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
         dados_tabela.append([item['descricao'], f"R$ {item['valor']:.2f}"])
         total_geral += item['valor']
         
-    # Linha do Total Geral no fim da tabela
-    dados_tabela.append(["<b>TOTAL DO ORÇAMENTO</b>", f"<b>R$ {total_geral:.2f}</b>"])
+    # CORREÇÃO: Usando o Paragraph com o estilo bold para não vazar as tags <b> no PDF
+    dados_tabela.append([
+        Paragraph("TOTAL DO ORÇAMENTO", estilo_tabela_bold), 
+        Paragraph(f"R$ {total_geral:.2f}", estilo_tabela_bold)
+    ])
     
-    # Estilização da Tabela (Preto e Branco clássico para impressão)
+    # Estilização da Tabela
     tabela = Table(dados_tabela, colWidths=[380, 130])
     tabela.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (1, 0), colors.HexColor("#222222")),
         ('TEXTCOLOR', (0, 0), (1, 0), colors.white),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('ALIGN', (1, 0), (1, -1), 'RIGHT'), # Alinha valores à direita
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'), 
         ('FONTNAME', (0, 0), (1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (1, 0), 10),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
         ('TOPPADDING', (0, 0), (-1, -1), 8),
         ('GRID', (0, 0), (-1, -2), 0.5, colors.HexColor("#DDDDDD")),
-        ('LINEABOVE', (0, -1), (1, -1), 1.5, colors.HexColor("#111111")), # Linha forte no total
+        ('LINEABOVE', (0, -1), (1, -1), 1.5, colors.HexColor("#111111")), 
     ]))
     
     elementos.append(tabela)
     
-    # 4. Rodapé / Termos básicos
+    # 4. Rodapé
     elementos.append(Spacer(1, 40))
     elementos.append(Paragraph("<i>* Orçamento sujeito a alterações caso surjam novos defeitos ocultos constatados na desmontagem.</i>", estilo_texto))
     elementos.append(Paragraph("<i>Validade deste orçamento: 10 dias.</i>", estilo_texto))
     
-    # Constrói o documento
     doc.build(elementos)
     buffer.seek(0)
     return buffer
