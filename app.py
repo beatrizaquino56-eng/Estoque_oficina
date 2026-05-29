@@ -35,97 +35,199 @@ def formatar_telefone(num):
         return f"({apenas_numeros[:2]}) {apenas_numeros[2:6]}-{apenas_numeros[6:]}"
     return num
 
-# Função Inteligente para gerar o PDF do Orçamento (CORRIGIDA)
+# Função Inteligente para gerar o PDF do Orçamento no padrão profissional
 def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
     buffer = io.BytesIO()
+    
+    # Define as margens da página A4
     doc = SimpleDocTemplate(
         buffer, 
         pagesize=A4,
-        rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30
+        rightMargin=35, leftMargin=35, topMargin=35, bottomMargin=35
     )
     
     elementos = []
     estilos = getSampleStyleSheet()
     
-    # Customização de estilos visuais
+    # --- Definição de Estilos de Texto ---
     estilo_titulo = ParagraphStyle(
         'TituloOficina',
         parent=estilos['Heading1'],
-        fontSize=20,
+        fontSize=22,
+        fontName='Helvetica-Bold',
         textColor=colors.HexColor("#111111"),
-        spaceAfter=5
+        spaceAfter=2
     )
-    estilo_sub = ParagraphStyle(
-        'SubOrcamento',
+    estilo_sub_empresa = ParagraphStyle(
+        'SubEmpresa',
         parent=estilos['Normal'],
-        fontSize=12,
-        textColor=colors.HexColor("#555555"),
-        spaceAfter=20
+        fontSize=9,
+        fontName='Helvetica',
+        textColor=colors.HexColor("#444444"),
+        leading=12
     )
-    estilo_texto = ParagraphStyle(
-        'TextoNormal',
+    estilo_tipo_doc = ParagraphStyle(
+        'TipoDoc',
+        parent=estilos['Normal'],
+        fontSize=14,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor("#222222"),
+        alignment=2 # Alinhado à direita
+    )
+    estilo_dados_doc = ParagraphStyle(
+        'DadosDoc',
         parent=estilos['Normal'],
         fontSize=10,
+        fontName='Helvetica',
         textColor=colors.HexColor("#222222"),
-        spaceAfter=6
+        alignment=2, # Alinhado à direita
+        leading=14
     )
-    # Novo estilo específico para aplicar o negrito correto dentro da tabela
-    estilo_tabela_bold = ParagraphStyle(
-        'TabelaBold',
+    estilo_campo = ParagraphStyle(
+        'CampoCliente',
+        parent=estilos['Normal'],
+        fontSize=10.5,
+        fontName='Helvetica',
+        textColor=colors.HexColor("#111111"),
+        leading=16
+    )
+    estilo_tabela_header = ParagraphStyle(
+        'TabHeader',
         parent=estilos['Normal'],
         fontSize=10,
         fontName='Helvetica-Bold',
+        textColor=colors.white
+    )
+    estilo_tabela_itens = ParagraphStyle(
+        'TabItens',
+        parent=estilos['Normal'],
+        fontSize=10,
+        fontName='Helvetica'
+    )
+    estilo_tabela_bold = ParagraphStyle(
+        'TabBold',
+        parent=estilos['Normal'],
+        fontSize=11,
+        fontName='Helvetica-Bold',
         textColor=colors.HexColor("#111111")
     )
+
+    # -------------------------------------------------------------------------
+    # 1. CABEÇALHO DIVIDIDO (Dados da Empresa à Esquerda | Tipo/Data à Direita)
+    # -------------------------------------------------------------------------
+    dados_empresa = [
+        [
+            Paragraph("<b>LAUD AUTOPEÇAS E MECÂNICA</b>", estilo_titulo),
+            Paragraph("<b>ORÇAMENTO</b>", estilo_tipo_doc)
+        ],
+        [
+            Paragraph("Avenida Maria Antonia Camargo de Oliveira, 3053 - Vila Ferroviária<br/>Araraquara - SP | Fone: (16) 3336-8899", estilo_sub_empresa),
+            Paragraph(f"<b>Data:</b> {pd.Timestamp.now().strftime('%d/%m/%Y')}", estilo_dados_doc)
+        ]
+    ]
     
-    # 1. Cabeçalho da Empresa
-    elementos.append(Paragraph("<b>LAUD CAMBIOS AUTO PEÇAS E MECÂNICA</b>", estilo_titulo))
-    elementos.append(Paragraph("Especializada em Câmbios e Diferenciais", estilo_texto))
-    elementos.append(Paragraph("<b>ORÇAMENTO DE MANUTENÇÃO</b>", estilo_sub))
-    elementos.append(Spacer(1, 10))
-    
-    # 2. Dados do Cliente e Veículo
-    elementos.append(Paragraph(f"<b>Cliente:</b> {cliente}", estilo_texto))
-    elementos.append(Paragraph(f"<b>Telefone:</b> {telefone}", estilo_texto))
-    elementos.append(Paragraph(f"<b>Veículo / Câmbio:</b> {veiculo}", estilo_texto))
+    # Tabela invisível para alinhar o topo do documento
+    tabela_topo = Table(dados_empresa, colWidths=[340, 180])
+    tabela_topo.setStyle(TableStyle([
+        ('ALIGN', (0,0), (0,-1), 'LEFT'),
+        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+    ]))
+    elementos.append(tabela_topo)
     elementos.append(Spacer(1, 15))
     
-    # 3. Tabela de Peças e Serviços
-    dados_tabela = [["Item / Descrição da Peça", "Valor Unitário (R$)"]]
+    # -------------------------------------------------------------------------
+    # 2. BLOCO DE DADOS DO CLIENTE E VEÍCULO (Layout Limpo e Enquadrado)
+    # -------------------------------------------------------------------------
+    dados_cliente_bloco = [
+        [Paragraph(f"<b>Cliente:</b> {cliente}", estilo_campo)],
+        [Paragraph(f"<b>Telefone:</b> {telefone}", estilo_campo)],
+        [Paragraph(f"<b>Veículo / Câmbio:</b> {veiculo}", estilo_campo)]
+    ]
+    
+    tabela_cliente = Table(dados_cliente_bloco, colWidths=[520])
+    tabela_cliente.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")), # Borda cinza clara ao redor
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#FAFAFA")), # Fundo sutil
+        ('PADDING', (0,0), (-1,-1), 8),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+    ]))
+    elementos.append(tabela_cliente)
+    elementos.append(Spacer(1, 20))
+    
+    # -------------------------------------------------------------------------
+    # 3. TABELA DE PRODUTOS / SERVIÇOS (Idêntica ao modelo de colunas)
+    # -------------------------------------------------------------------------
+    # Cabeçalho da tabela com fundo escuro profissional
+    dados_tabela = [[
+        Paragraph("Descrição da Peça / Serviço", estilo_tabela_header), 
+        Paragraph("Valor Total (R$)", estilo_tabela_header)
+    ]]
     
     total_geral = 0.0
     for item in lista_pecas:
-        dados_tabela.append([item['descricao'], f"R$ {item['valor']:.2f}"])
+        dados_tabela.append([
+            Paragraph(item['descricao'], estilo_tabela_itens), 
+            Paragraph(f"R$ {item['valor']:.2f}", estilo_tabela_itens)
+        ])
         total_geral += item['valor']
         
-    # CORREÇÃO: Usando o Paragraph com o estilo bold para não vazar as tags <b> no PDF
+    # Linha do Total Geral estilizada
     dados_tabela.append([
-        Paragraph("TOTAL DO ORÇAMENTO", estilo_tabela_bold), 
+        Paragraph("TOTAL DO ORÇAMENTO:", estilo_tabela_bold), 
         Paragraph(f"R$ {total_geral:.2f}", estilo_tabela_bold)
     ])
     
-    # Estilização da Tabela
-    tabela = Table(dados_tabela, colWidths=[380, 130])
-    tabela.setStyle(TableStyle([
+    # Configuração das larguras: Descrição larga (390) e Valor alinhado (130)
+    tabela_itens = Table(dados_tabela, colWidths=[390, 130])
+    tabela_itens.setStyle(TableStyle([
+        # Estilo do Cabeçalho
         ('BACKGROUND', (0, 0), (1, 0), colors.HexColor("#222222")),
-        ('TEXTCOLOR', (0, 0), (1, 0), colors.white),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('ALIGN', (1, 0), (1, -1), 'RIGHT'), 
-        ('FONTNAME', (0, 0), (1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('GRID', (0, 0), (-1, -2), 0.5, colors.HexColor("#DDDDDD")),
-        ('LINEABOVE', (0, -1), (1, -1), 1.5, colors.HexColor("#111111")), 
+        ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+        ('TOPPADDING', (0, 0), (-1, 0), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        
+        # Alinhamento do conteúdo das colunas
+        ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
+        ('VALIGN', (0, 0), (-1,-1), 'MIDDLE'),
+        
+        # Espaçamento interno das células
+        ('TOPPADDING', (0, 1), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 7),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        
+        # Linhas divisórias horizontais discretas (estilo o impresso)
+        ('LINEBELOW', (0, 1), (1, -2), 0.5, colors.HexColor("#EAEAEA")),
+        
+        # Destaque para a linha final do Total
+        ('BACKGROUND', (0, -1), (1, -1), colors.HexColor("#F5F5F5")),
+        ('LINEABOVE', (0, -1), (1, -1), 1.5, colors.HexColor("#222222")),
     ]))
     
-    elementos.append(tabela)
+    elementos.append(tabela_itens)
     
-    # 4. Rodapé
-    elementos.append(Spacer(1, 40))
-    elementos.append(Paragraph("<i>* Orçamento sujeito a alterações caso surjam novos defeitos ocultos constatados na desmontagem.</i>", estilo_texto))
-    elementos.append(Paragraph("<i>Validade deste orçamento: 10 dias.</i>", estilo_texto))
+    # -------------------------------------------------------------------------
+    # 4. RODAPÉ / OBSERVAÇÕES
+    # -------------------------------------------------------------------------
+    elementos.append(Spacer(1, 35))
+    estilo_obs = ParagraphStyle(
+        'ObsTexto',
+        parent=estilos['Normal'],
+        fontSize=9,
+        fontName='Helvetica-Oblique',
+        textColor=colors.HexColor("#555555"),
+        leading=13
+    )
+    elementos.append(Paragraph("* Orçamento sujeito a alterações caso surjam novos defeitos ocultos constatados na desmontagem do câmbio/diferencial.", estilo_obs))
+    elementos.append(Paragraph("Validade deste orçamento: 10 dias.", estilo_obs))
     
+    # Constrói o documento final
     doc.build(elementos)
     buffer.seek(0)
     return buffer
