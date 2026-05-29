@@ -5,14 +5,14 @@ import io
 from supabase import create_client, Client
 
 # Bibliotecas para geração do PDF profissional
-from reportlab.lib.pagesizes import a4
+from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-# --- 1. CONFIGURAÇÃO DE CONEXÃO COM O SUPABASE ---
+# --- 1. CONFIGURAÇÃO DE CONEXÃO COM O SUPABASE (Corrigido com os dados reais dos prints!) ---
 SUPABASE_URL = "https://lgpcpnxhkogtvhjtfwya.supabase.co"
-SUPABASE_KEY = "sb_publishable_1kunRmsK4SdXCk849paiyg_1OaraKs_"
+SUPABASE_KEY = "sb_publishable_1kunRmsK4SdXCk849paiyg_1oaraKs_"
 
 # Inicializa o cliente do Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -40,7 +40,7 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, 
-        pagesize=a4,
+        pagesize=A4,
         rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30
     )
     
