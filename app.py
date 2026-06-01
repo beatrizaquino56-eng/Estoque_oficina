@@ -164,7 +164,7 @@ if modulo == "👥 Clientes & Veículos":
                             novo_status = st.selectbox("Alterar Status para:", ["Aguardando Diagnóstico", "Em Manutenção", "Aguardando Peças", "Pronto / Retirada"], key=f"status_{row['id']}")
                             if st.button("🔄 Atualizar", key=f"btn_status_{row['id']}"):
                                 supabase.table("clientes").update({"status": novo_status}).eq("id", row['id']).execute()
-                                st.success("Status Atualizado!")
+                                st.success("Status Evaluated!")
                                 st.rerun()
                         with c2:
                             st.write("")
