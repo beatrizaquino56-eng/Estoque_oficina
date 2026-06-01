@@ -3,30 +3,22 @@ import pandas as pd
 import re
 import io
 from supabase import create_client, Client
-
-# Bibliotecas para geração do PDF profissional (ReportLab)
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
+from fpdf import FPDF # Nova biblioteca de PDF, super leve e estável
 
 # --- 1. CONFIGURAÇÃO DE CONEXÃO COM O SUPABASE ---
 SUPABASE_URL = "https://lgpcpnxhkogtvhjtfwya.supabase.co"
 SUPABASE_KEY = "sb_publishable_1kunRmsK4SdXCk849paiyg_1oaraKs_"
 
-# Inicializa o cliente do Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.title("⚙️ Sistema Integrado - Oficina Mecânica")
 st.markdown("---")
 
-# --- 2. MENU PRINCIPAL DE NAVEGAÇÃO ---
 modulo = st.sidebar.radio(
     "Selecione o Módulo:", 
     ["👥 Clientes & Veículos", "📦 Gerenciar Estoque", "📋 Criar Orçamento (PDF)"]
 )
 
-# Função para formatar o telefone com parênteses no DDD e hífen
 def formatar_telefone(num):
     apenas_numeros = re.sub(r'\D', '', num)
     if len(apenas_numeros) == 11:
@@ -35,183 +27,67 @@ def formatar_telefone(num):
         return f"({apenas_numeros[:2]}) {apenas_numeros[2:6]}-{apenas_numeros[6:]}"
     return num
 
-# Função Inteligente para gerar o PDF do Orçamento no padrão profissional (Estilo Impresso)
-def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
-    buffer = io.BytesIO()
+# Nova função de PDF usando FPDF (Livre de erros de importação!)
+def gerar_pdf_orcamento_fpdf(cliente, telefone, veiculo, lista_pecas):
+    pdf = FPDF()
+    pdf.add_page()
     
-    # Define as margens da página A4
-    doc = SimpleDocTemplate(
-        buffer, 
-        pagesize=A4,
-        rightMargin=35, leftMargin=35, topMargin=35, bottomMargin=35
-    )
+    # Configurações de página e fontes padrão (Removendo acentos para evitar erros de codificação)
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.cell(140, 10, txt="LAUD AUTOPECAS E MECANICA", ln=False)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(50, 10, txt="ORCAMENTO", ln=True, align="R")
     
-    elementos = []
-    estilos = getSampleStyleSheet()
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(140, 5, txt="Avenida Maria Antonia Camargo de Oliveira, 3053 - Vila Ferroviaria", ln=False)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(50, 5, txt=f"Data: {pd.Timestamp.now().strftime('%d/%m/%Y')}", ln=True, align="R")
     
-    # --- Definição de Estilos de Texto ---
-    estilo_titulo = ParagraphStyle(
-        'TituloOficina',
-        parent=estilos['Heading1'],
-        fontSize=22,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor("#111111"),
-        spaceAfter=2
-    )
-    estilo_sub_empresa = ParagraphStyle(
-        'SubEmpresa',
-        parent=estilos['Normal'],
-        fontSize=9,
-        fontName='Helvetica',
-        textColor=colors.HexColor("#444444"),
-        leading=12
-    )
-    estilo_tipo_doc = ParagraphStyle(
-        'TipoDoc',
-        parent=estilos['Normal'],
-        fontSize=14,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor("#222222"),
-        alignment=2 # Alinhado à direita
-    )
-    estilo_dados_doc = ParagraphStyle(
-        'DadosDoc',
-        parent=estilos['Normal'],
-        fontSize=10,
-        fontName='Helvetica',
-        textColor=colors.HexColor("#222222"),
-        alignment=2, # Alinhado à direita
-        leading=14
-    )
-    estilo_campo = ParagraphStyle(
-        'CampoCliente',
-        parent=estilos['Normal'],
-        fontSize=10.5,
-        fontName='Helvetica',
-        textColor=colors.HexColor("#111111"),
-        leading=16
-    )
-    estilo_tabela_header = ParagraphStyle(
-        'TabHeader',
-        parent=estilos['Normal'],
-        fontSize=10,
-        fontName='Helvetica-Bold',
-        textColor=colors.white
-    )
-    estilo_tabela_itens = ParagraphStyle(
-        'TabItens',
-        parent=estilos['Normal'],
-        fontSize=10,
-        fontName='Helvetica'
-    )
-    estilo_tabela_bold = ParagraphStyle(
-        'TabBold',
-        parent=estilos['Normal'],
-        fontSize=11,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor("#111111")
-    )
-
-    # 1. CABEÇALHO DIVIDIDO (Dados da Empresa à Esquerda | Tipo/Data à Direita)
-    dados_empresa = [
-        [
-            Paragraph("<b>LAUD AUTOPEÇAS E MECÂNICA</b>", estilo_titulo),
-            Paragraph("<b>ORÇAMENTO</b>", estilo_tipo_doc)
-        ],
-        [
-            Paragraph("Avenida Maria Antonia Camargo de Oliveira, 3053 - Vila Ferroviária<br/>Araraquara - SP | Fone: (16) 3336-8899", estilo_sub_empresa),
-            Paragraph(f"<b>Data:</b> {pd.Timestamp.now().strftime('%d/%m/%Y')}", estilo_dados_doc)
-        ]
-    ]
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(190, 5, txt="Araraquara - SP | Fone: (16) 3336-8899", ln=True)
+    pdf.ln(10)
     
-    tabela_topo = Table(dados_empresa, colWidths=[340, 180])
-    tabela_topo.setStyle(TableStyle([
-        ('ALIGN', (0,0), (0,-1), 'LEFT'),
-        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-        ('TOPPADDING', (0,0), (-1,-1), 0),
-    ]))
-    elementos.append(tabela_topo)
-    elementos.append(Spacer(1, 15))
+    # Bloco de Dados do Cliente enquadrado
+    pdf.set_fill_color(250, 250, 250)
+    pdf.set_draw_color(200, 200, 200)
+    pdf.rect(10, 36, 190, 24, "DF")
     
-    # 2. BLOCO DE DADOS DO CLIENTE E VEÍCULO (Layout Limpo e Enquadrado)
-    dados_cliente_bloco = [
-        [Paragraph(f"<b>Cliente:</b> {cliente}", estilo_campo)],
-        [Paragraph(f"<b>Telefone:</b> {telefone}", estilo_campo)],
-        [Paragraph(f"<b>Veículo / Câmbio:</b> {veiculo}", estilo_campo)]
-    ]
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(190, 6, txt=f" Cliente: {cliente}", ln=True)
+    pdf.cell(190, 6, txt=f" Telefone: {telefone}", ln=True)
+    pdf.cell(190, 6, txt=f" Veiculo / Cambio: {veiculo}", ln=True)
+    pdf.ln(10)
     
-    tabela_cliente = Table(dados_cliente_bloco, colWidths=[520])
-    tabela_cliente.setStyle(TableStyle([
-        ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")), 
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#FAFAFA")), 
-        ('PADDING', (0,0), (-1,-1), 8),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-    ]))
-    elementos.append(tabela_cliente)
-    elementos.append(Spacer(1, 20))
+    # Tabela de Itens
+    pdf.set_fill_color(34, 34, 34)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(140, 8, txt=" Descricao da Peca / Servico", border=0, fill=True)
+    pdf.cell(50, 8, txt="Valor Total (R$) ", border=0, fill=True, align="R", ln=True)
     
-    # 3. TABELA DE PRODUTOS / SERVIÇOS
-    dados_tabela = [[
-        Paragraph("Descrição da Peça / Serviço", estilo_tabela_header), 
-        Paragraph("Valor Total (R$)", estilo_tabela_header)
-    ]]
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Helvetica", "", 10)
     
     total_geral = 0.0
     for item in lista_pecas:
-        dados_tabela.append([
-            Paragraph(item['descricao'], estilo_tabela_itens), 
-            Paragraph(f"R$ {item['valor']:.2f}", estilo_tabela_itens)
-        ])
+        desc_limpa = item['descricao'].encode('ascii', 'ignore').decode('ascii')
+        pdf.cell(140, 8, txt=f" {desc_limpa}", border="B")
+        pdf.cell(50, 8, txt=f"R$ {item['valor']:.2f} ", border="B", align="R", ln=True)
         total_geral += item['valor']
         
-    dados_tabela.append([
-        Paragraph("TOTAL DO ORÇAMENTO:", estilo_tabela_bold), 
-        Paragraph(f"R$ {total_geral:.2f}", estilo_tabela_bold)
-    ])
+    # Linha do Total
+    pdf.set_fill_color(245, 245, 245)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(140, 10, txt=" TOTAL DO ORCAMENTO:", border="T", fill=True)
+    pdf.cell(50, 10, txt=f"R$ {total_geral:.2f} ", border="T", fill=True, align="R", ln=True)
     
-    tabela_itens = Table(dados_tabela, colWidths=[390, 130])
-    tabela_itens.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (1, 0), colors.HexColor("#222222")),
-        ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
-        ('TOPPADDING', (0, 0), (-1, 0), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-        
-        ('ALIGN', (0, 1), (0, -1), 'LEFT'),
-        ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
-        ('VALIGN', (0, 0), (-1,-1), 'MIDDLE'),
-        
-        ('TOPPADDING', (0, 1), (-1, -1), 7),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 7),
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-        
-        ('LINEBELOW', (0, 1), (1, -2), 0.5, colors.HexColor("#EAEAEA")),
-        
-        ('BACKGROUND', (0, -1), (1, -1), colors.HexColor("#F5F5F5")),
-        ('LINEABOVE', (0, -1), (1, -1), 1.5, colors.HexColor("#222222")),
-    ]))
-    elementos.append(tabela_itens)
+    pdf.ln(15)
+    pdf.set_font("Helvetica", "I", 9)
+    pdf.set_text_color(85, 85, 85)
+    pdf.cell(190, 5, txt="* Orcamento sujeito a alteracoes caso surjam novos defeitos ocultos constatados na desmontagem do cambio.", ln=True)
+    pdf.cell(190, 5, txt="Validade deste orcamento: 10 dias.", ln=True)
     
-    # 4. RODAPÉ / OBSERVAÇÕES
-    elementos.append(Spacer(1, 35))
-    estilo_obs = ParagraphStyle(
-        'ObsTexto',
-        parent=estilos['Normal'],
-        fontSize=9,
-        fontName='Helvetica-Oblique',
-        textColor=colors.HexColor("#555555"),
-        leading=13
-    )
-    elementos.append(Paragraph("* Orçamento sujeito a alterações caso surjam novos defeitos ocultos constatados na desmontagem do câmbio/diferencial.", estilo_obs))
-    elementos.append(Paragraph("Validade deste orçamento: 10 dias.", estilo_obs))
-    
-    doc.build(elementos)
-    buffer.seek(0)
-    return buffer
+    return bytes(pdf.output())
 
 # ==============================================================================
 #                      MÓDULO: CLIENTES & VEÍCULOS
@@ -231,13 +107,12 @@ if modulo == "👥 Clientes & Veículos":
         with col2:
             telefone_input = st.text_input("Número de Telefone (com DDD)", placeholder="Ex: 16999999999")
             telefone = formatar_telefone(telefone_input)
-            defeito = st.text_area("Defeito Relatado / Sintomas", placeholder="Ex: Barulho na segunda marcha...")
+            defeito = st.text_area("Defeito Relatado / Sintomas", placeholder="Ex: Barulho na segunda...")
             
         if st.button("Gravar Entrada do Veículo", key="btn_cliente"):
             if nome_cliente == "" or veiculo == "":
                 st.error("Por favor, preencha pelo menos o Nome do Cliente e o Veículo!")
             else:
-                # CORRIGIDO: Chave correspondente exata ao banco ('nome_cliente')
                 novo_cliente = {
                     "nome_cliente": nome_cliente, 
                     "veiculo": veiculo, 
@@ -405,11 +280,10 @@ elif modulo == "📦 Gerenciar Estoque":
         st.dataframe(dados_finais[colunas_existem], use_container_width=True)
 
 # ==============================================================================
-#                      MÓDULO: CRIAR ORÇAMENTO
+#                      MÓDULO: CRIAR ORÇAMENTO (FPDF)
 # ==============================================================================
 elif modulo == "📋 Criar Orçamento (PDF)":
     st.header("📋 Gerador de Orçamentos da Oficina")
-    st.write("Preencha os dados abaixo para gerar o PDF oficial.")
     
     if 'pecas_orcamento' not in st.session_state:
         st.session_state.pecas_orcamento = []
@@ -435,10 +309,7 @@ elif modulo == "📋 Criar Orçamento (PDF)":
         if peca_desc == "":
             st.error("Digite a descrição da peça!")
         else:
-            st.session_state.pecas_orcamento.append({
-                "descricao": peca_desc,
-                "valor": float(peca_val)
-            })
+            st.session_state.pecas_orcamento.append({"descricao": peca_desc, "valor": float(peca_val)})
             st.success(f"'{peca_desc}' adicionado!")
             st.rerun()
             
@@ -456,8 +327,7 @@ elif modulo == "📋 Criar Orçamento (PDF)":
             if orc_cliente == "" or orc_veiculo == "":
                 st.warning("Preencha o nome do cliente e o veículo para liberar o PDF.")
             else:
-                pdf_data = gerar_pdf_orcamento(orc_cliente, orc_tel, orc_veiculo, st.session_state.pecas_orcamento)
-                
+                pdf_data = gerar_pdf_orcamento_fpdf(orc_cliente, orc_tel, orc_veiculo, st.session_state.pecas_orcamento)
                 st.download_button(
                     label="📥 Baixar Orçamento em PDF",
                     data=pdf_data,
@@ -468,5 +338,3 @@ elif modulo == "📋 Criar Orçamento (PDF)":
             if st.button("🧹 Limpar Tudo / Novo Orçamento"):
                 st.session_state.pecas_orcamento = []
                 st.rerun()
-    else:
-        st.info("Nenhuma peça adicionada ao orçamento ainda.")
