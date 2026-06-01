@@ -4,13 +4,13 @@ import re
 import io
 from supabase import create_client, Client
 
-# Bibliotecas para geração do PDF profissional
+# Bibliotecas para geração do PDF profissional (ReportLab)
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-# --- 1. CONFIGURAÇÃO DE CONEXÃO COM O SUPABASE (Corrigido com os dados reais dos prints!) ---
+# --- 1. CONFIGURAÇÃO DE CONEXÃO COM O SUPABASE ---
 SUPABASE_URL = "https://lgpcpnxhkogtvhjtfwya.supabase.co"
 SUPABASE_KEY = "sb_publishable_1kunRmsK4SdXCk849paiyg_1oaraKs_"
 
@@ -20,7 +20,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 st.title("⚙️ Sistema Integrado - Oficina Mecânica")
 st.markdown("---")
 
-# --- 2. MENU PRINCIPAL DE NAVEGAÇÃO (Com Novo Módulo de Orçamentos!) ---
+# --- 2. MENU PRINCIPAL DE NAVEGAÇÃO ---
 modulo = st.sidebar.radio(
     "Selecione o Módulo:", 
     ["👥 Clientes & Veículos", "📦 Gerenciar Estoque", "📋 Criar Orçamento (PDF)"]
@@ -35,7 +35,7 @@ def formatar_telefone(num):
         return f"({apenas_numeros[:2]}) {apenas_numeros[2:6]}-{apenas_numeros[6:]}"
     return num
 
-# Função Inteligente para gerar o PDF do Orçamento no padrão profissional
+# Função Inteligente para gerar o PDF do Orçamento no padrão profissional (Estilo Impresso)
 def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
     buffer = io.BytesIO()
     
@@ -112,9 +112,7 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
         textColor=colors.HexColor("#111111")
     )
 
-    # -------------------------------------------------------------------------
     # 1. CABEÇALHO DIVIDIDO (Dados da Empresa à Esquerda | Tipo/Data à Direita)
-    # -------------------------------------------------------------------------
     dados_empresa = [
         [
             Paragraph("<b>LAUD AUTOPEÇAS E MECÂNICA</b>", estilo_titulo),
@@ -126,7 +124,6 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
         ]
     ]
     
-    # Tabela invisível para alinhar o topo do documento
     tabela_topo = Table(dados_empresa, colWidths=[340, 180])
     tabela_topo.setStyle(TableStyle([
         ('ALIGN', (0,0), (0,-1), 'LEFT'),
@@ -138,9 +135,7 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
     elementos.append(tabela_topo)
     elementos.append(Spacer(1, 15))
     
-    # -------------------------------------------------------------------------
     # 2. BLOCO DE DADOS DO CLIENTE E VEÍCULO (Layout Limpo e Enquadrado)
-    # -------------------------------------------------------------------------
     dados_cliente_bloco = [
         [Paragraph(f"<b>Cliente:</b> {cliente}", estilo_campo)],
         [Paragraph(f"<b>Telefone:</b> {telefone}", estilo_campo)],
@@ -149,8 +144,8 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
     
     tabela_cliente = Table(dados_cliente_bloco, colWidths=[520])
     tabela_cliente.setStyle(TableStyle([
-        ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")), # Borda cinza clara ao redor
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#FAFAFA")), # Fundo sutil
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")), 
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#FAFAFA")), 
         ('PADDING', (0,0), (-1,-1), 8),
         ('TOPPADDING', (0,0), (-1,-1), 6),
         ('BOTTOMPADDING', (0,0), (-1,-1), 6),
@@ -158,10 +153,7 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
     elementos.append(tabela_cliente)
     elementos.append(Spacer(1, 20))
     
-    # -------------------------------------------------------------------------
-    # 3. TABELA DE PRODUTOS / SERVIÇOS (Idêntica ao modelo de colunas)
-    # -------------------------------------------------------------------------
-    # Cabeçalho da tabela com fundo escuro profissional
+    # 3. TABELA DE PRODUTOS / SERVIÇOS
     dados_tabela = [[
         Paragraph("Descrição da Peça / Serviço", estilo_tabela_header), 
         Paragraph("Valor Total (R$)", estilo_tabela_header)
@@ -175,46 +167,36 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
         ])
         total_geral += item['valor']
         
-    # Linha do Total Geral estilizada
     dados_tabela.append([
         Paragraph("TOTAL DO ORÇAMENTO:", estilo_tabela_bold), 
         Paragraph(f"R$ {total_geral:.2f}", estilo_tabela_bold)
     ])
     
-    # Configuração das larguras: Descrição larga (390) e Valor alinhado (130)
     tabela_itens = Table(dados_tabela, colWidths=[390, 130])
     tabela_itens.setStyle(TableStyle([
-        # Estilo do Cabeçalho
         ('BACKGROUND', (0, 0), (1, 0), colors.HexColor("#222222")),
         ('ALIGN', (0, 0), (0, 0), 'LEFT'),
         ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
         ('TOPPADDING', (0, 0), (-1, 0), 6),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
         
-        # Alinhamento do conteúdo das colunas
         ('ALIGN', (0, 1), (0, -1), 'LEFT'),
         ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
         ('VALIGN', (0, 0), (-1,-1), 'MIDDLE'),
         
-        # Espaçamento interno das células
         ('TOPPADDING', (0, 1), (-1, -1), 7),
         ('BOTTOMPADDING', (0, 1), (-1, -1), 7),
         ('LEFTPADDING', (0, 0), (-1, -1), 8),
         ('RIGHTPADDING', (0, 0), (-1, -1), 8),
         
-        # Linhas divisórias horizontais discretas (estilo o impresso)
         ('LINEBELOW', (0, 1), (1, -2), 0.5, colors.HexColor("#EAEAEA")),
         
-        # Destaque para a linha final do Total
         ('BACKGROUND', (0, -1), (1, -1), colors.HexColor("#F5F5F5")),
         ('LINEABOVE', (0, -1), (1, -1), 1.5, colors.HexColor("#222222")),
     ]))
-    
     elementos.append(tabela_itens)
     
-    # -------------------------------------------------------------------------
     # 4. RODAPÉ / OBSERVAÇÕES
-    # -------------------------------------------------------------------------
     elementos.append(Spacer(1, 35))
     estilo_obs = ParagraphStyle(
         'ObsTexto',
@@ -227,7 +209,6 @@ def gerar_pdf_orcamento(cliente, telefone, veiculo, lista_pecas):
     elementos.append(Paragraph("* Orçamento sujeito a alterações caso surjam novos defeitos ocultos constatados na desmontagem do câmbio/diferencial.", estilo_obs))
     elementos.append(Paragraph("Validade deste orçamento: 10 dias.", estilo_obs))
     
-    # Constrói o documento final
     doc.build(elementos)
     buffer.seek(0)
     return buffer
@@ -250,13 +231,21 @@ if modulo == "👥 Clientes & Veículos":
         with col2:
             telefone_input = st.text_input("Número de Telefone (com DDD)", placeholder="Ex: 16999999999")
             telefone = formatar_telefone(telefone_input)
-            defeito = st.text_area("Defeito Relatado / Sintomas", placeholder="Ex: Barulho na suspensão...")
+            defeito = st.text_area("Defeito Relatado / Sintomas", placeholder="Ex: Barulho na segunda marcha...")
             
         if st.button("Gravar Entrada do Veículo", key="btn_cliente"):
             if nome_cliente == "" or veiculo == "":
                 st.error("Por favor, preencha pelo menos o Nome do Cliente e o Veículo!")
             else:
-                novo_cliente = {"nome_cliente": nome_cliente, "veiculo": veiculo, "placa": placa, "telefone": telefone, "defeito": defeito, "status": "Aguardando Diagnóstico"}
+                # CORRIGIDO: Chave correspondente exata ao banco ('nome_cliente')
+                novo_cliente = {
+                    "nome_cliente": nome_cliente, 
+                    "veiculo": veiculo, 
+                    "placa": placa, 
+                    "telefone": telefone, 
+                    "defeito": defeito, 
+                    "status": "Aguardando Diagnóstico"
+                }
                 supabase.table("clientes").insert(novo_cliente).execute()
                 st.success(f"Sucesso! Registro de '{nome_cliente}' gravado!")
                 st.rerun()
@@ -416,20 +405,19 @@ elif modulo == "📦 Gerenciar Estoque":
         st.dataframe(dados_finais[colunas_existem], use_container_width=True)
 
 # ==============================================================================
-#                      MÓDULO: CRRIAR ORÇAMENTO (NEW!)
+#                      MÓDULO: CRIAR ORÇAMENTO
 # ==============================================================================
 elif modulo == "📋 Criar Orçamento (PDF)":
     st.header("📋 Gerador de Orçamentos da Oficina")
     st.write("Preencha os dados abaixo para gerar o PDF oficial.")
     
-    # Inicializa a lista de peças na sessão do aplicativo para não perder os dados ao clicar em botões
     if 'pecas_orcamento' not in st.session_state:
         st.session_state.pecas_orcamento = []
         
     c1, c2 = st.columns(2)
     with c1:
         orc_cliente = st.text_input("Nome do Cliente:", placeholder="Ex: Roberto Almeida")
-        orc_veiculo = st.text_input("Veículo ou Modelo do Câmbio:", placeholder="Ex: Amarok - Câmbio Automático ZF8HP")
+        orc_veiculo = st.text_input("Veículo ou Modelo do Câmbio:", placeholder="Ex: Amarok - Câmbio ZF8HP")
     with c2:
         orc_tel_input = st.text_input("Telefone do Cliente:", placeholder="Ex: 16988888888")
         orc_tel = formatar_telefone(orc_tel_input)
@@ -439,7 +427,7 @@ elif modulo == "📋 Criar Orçamento (PDF)":
     
     col_p1, col_p2 = st.columns([3, 1])
     with col_p1:
-        peca_desc = st.text_input("Descrição da Peça ou Serviço:", placeholder="Ex: Jogo de Juntas do Câmbio ou Mão de Obra de Montagem", key="input_peca_desc")
+        peca_desc = st.text_input("Descrição da Peça ou Serviço:", placeholder="Ex: Jogo de Juntas", key="input_peca_desc")
     with col_p2:
         peca_val = st.number_input("Valor (R$):", min_value=0.0, value=0.0, step=10.0, key="input_peca_val")
         
@@ -447,7 +435,6 @@ elif modulo == "📋 Criar Orçamento (PDF)":
         if peca_desc == "":
             st.error("Digite a descrição da peça!")
         else:
-            # Salva na lista temporária da sessão
             st.session_state.pecas_orcamento.append({
                 "descricao": peca_desc,
                 "valor": float(peca_val)
@@ -455,11 +442,10 @@ elif modulo == "📋 Criar Orçamento (PDF)":
             st.success(f"'{peca_desc}' adicionado!")
             st.rerun()
             
-    # Exibe a lista de peças adicionadas até agora
     if st.session_state.pecas_orcamento:
         st.markdown("### 📝 Itens incluídos:")
         df_temp = pd.DataFrame(st.session_state.pecas_orcamento)
-        df_temp.index = df_temp.index + 1 # Começa a contagem em 1 em vez de 0
+        df_temp.index = df_temp.index + 1
         st.table(df_temp.style.format({"valor": "R$ {:.2f}"}))
         
         total_acumulado = sum(item['valor'] for item in st.session_state.pecas_orcamento)
@@ -467,7 +453,6 @@ elif modulo == "📋 Criar Orçamento (PDF)":
         
         c_acao1, c_acao2 = st.columns(2)
         with c_acao1:
-            # Botão de download do PDF
             if orc_cliente == "" or orc_veiculo == "":
                 st.warning("Preencha o nome do cliente e o veículo para liberar o PDF.")
             else:
