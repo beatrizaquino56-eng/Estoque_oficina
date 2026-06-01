@@ -3,7 +3,7 @@ import pandas as pd
 import re
 import io
 from supabase import create_client, Client
-from fpdf import FPDF  # Usando FPDF2 para estabilidade total na nuvem
+from fpdf import FPDF  # Usando FPDF2 para evitar os travamentos de cache da nuvem
 
 # --- 1. CONFIGURAÇÃO DE CONEXÃO COM O SUPABASE ---
 SUPABASE_URL = "https://lgpcpnxhkogtvhjtfwya.supabase.co"
@@ -34,7 +34,7 @@ def gerar_pdf_orcamento_fpdf(cliente, telefone, veiculo, lista_pecas):
     pdf = FPDF()
     pdf.add_page()
     
-    # Cabeçalho Espelhado no Modelo Físico
+    # Cabeçalho da Empresa
     pdf.set_font("Helvetica", "B", 20)
     pdf.cell(140, 10, txt="LAUD AUTOPECAS E MECANICA", ln=False)
     pdf.set_font("Helvetica", "B", 12)
@@ -49,7 +49,7 @@ def gerar_pdf_orcamento_fpdf(cliente, telefone, veiculo, lista_pecas):
     pdf.cell(190, 5, txt="Araraquara - SP | Fone: (16) 3336-8899", ln=True)
     pdf.ln(10)
     
-    # Bloco Enquadrado de Informações Limpas
+    # Bloco de Informações do Cliente
     pdf.set_fill_color(250, 250, 250)
     pdf.set_draw_color(200, 200, 200)
     pdf.rect(10, 36, 190, 24, "DF")
@@ -72,7 +72,6 @@ def gerar_pdf_orcamento_fpdf(cliente, telefone, veiculo, lista_pecas):
     
     total_geral = 0.0
     for item in lista_pecas:
-        # Remove caracteres especiais para evitar erros de renderização
         desc_limpa = item['descricao'].encode('ascii', 'ignore').decode('ascii')
         pdf.cell(140, 8, txt=f" {desc_limpa}", border="B")
         pdf.cell(50, 8, txt=f"R$ {item['valor']:.2f} ", border="B", align="R", ln=True)
@@ -131,7 +130,7 @@ if modulo == "👥 Clientes & Veículos":
     with aba_ver_clientes:
         st.subheader("📋 Veículos no Pátio")
         
-        # CORREÇÃO DA LINHA 131/132: Separado e ordenado com segurança pelo id
+        # Realiza a consulta de forma limpa ordenando por id
         resposta_clientes = supabase.table("clientes").select("*").order("id", desc=True).execute()
         dados_clientes = pd.DataFrame(resposta_clientes.data)
         
@@ -229,7 +228,7 @@ elif modulo == "📦 Gerenciar Estoque":
                 if st.button("Confirmar Entrada", key="btn_reposicao"):
                     nova_quantidade = int(qtd_atual_banco + qtd_novas_pecas)
                     supabase.table("estoque").update({"quantidade": nova_quantidade}).eq("id", id_produto_reposicao).execute()
-                    st.success("Estoque updated!")
+                    st.success("Estoque atualizado!")
                     st.rerun()
 
     with aba_saida:
@@ -321,4 +320,25 @@ elif modulo == "📋 Criar Orçamento (PDF)":
     if st.session_state.pecas_orcamento:
         st.markdown("### 📝 Itens incluídos:")
         df_temp = pd.DataFrame(st.session_state.pecas_orcamento)
-        df
+        df_temp.index = df_temp.index + 1
+        st.table(df_temp.style.format({"valor": "R$ {:.2f}"}))
+        
+        total_acumulado = sum(item['valor'] for item in st.session_state.pecas_orcamento)
+        st.markdown(f"### **Total Atual: R$ {total_acumulado:.2f}**")
+        
+        c_acao1, c_acao2 = st.columns(2)
+        with c_acao1:
+            if orc_cliente == "" or orc_veiculo == "":
+                st.warning("Preencha o nome do cliente e o veículo para liberar o PDF.")
+            else:
+                pdf_data = gerar_pdf_orcamento_fpdf(orc_cliente, orc_tel, orc_veiculo, st.session_state.pecas_orcamento)
+                st.download_button(
+                    label="📥 Baixar Orçamento em PDF",
+                    data=pdf_data,
+                    file_name=f"Orcamento_{orc_cliente.replace(' ', '_')}.pdf",
+                    mime="application/pdf"
+                )
+        with c_acao2:
+            if st.button("🧹 Limpar Tudo / Novo Orçamento"):
+                st.session_state.pecas_orcamento = []
+                st.rerun()
