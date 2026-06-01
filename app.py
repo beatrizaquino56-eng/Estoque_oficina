@@ -6,8 +6,12 @@ from supabase import create_client, Client
 from fpdf import FPDF  # Usando FPDF2 para evitar os travamentos de cache da nuvem
 
 # --- 1. CONFIGURAÇÃO DE CONEXÃO COM O SUPABASE ---
+
 SUPABASE_URL = "https://lgpcpnxhkogtvhjtfwya.supabase.co"
-SUPABASE_KEY = "sb_publishable_1kunRmsK4SdXCk849paiyg_1oaraKs_"
+
+# Cole a sua service_role cópiada aqui dentro:
+
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxncGNwbnhoa29ndHZoanRmd3lhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDA1NzAxNiwiZXhwIjoyMDk1NjMzMDE2fQ.84Otv9sBd7QDEfw8fPS15ybNK5_ps_ZGYR5PrBLKtKM"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
