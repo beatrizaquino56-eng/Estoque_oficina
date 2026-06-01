@@ -127,8 +127,8 @@ if modulo == "👥 Clientes & Veículos":
                 
     with aba_ver_clientes:
         st.subheader("📋 Veículos no Pátio")
-        resposta_clientes = supabase.table("clientes").select("*").order("created_at", desc=True).execute()
-        dados_clientes = pd.DataFrame(resposta_clientes.data)
+# Trocamos "created_at" por "id", que é garantido existir no seu banco de dados!
+resposta_clientes = supabase.table("clientes").select("*").order("id", desc=True).execute()        dados_clientes = pd.DataFrame(resposta_clientes.data)
         
         if not dados_clientes.empty:
             c_busca, c_filtro = st.columns([2, 1])
