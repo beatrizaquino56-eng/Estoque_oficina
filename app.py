@@ -5,6 +5,27 @@ import io
 from supabase import create_client, Client
 from fpdf import FPDF
 
+# --- CONTROLE DE ACESSO (TELA DE LOGIN) ---
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+
+if not st.session_state["autenticado"]:
+    st.title("🔒 Acesso Restrito - Sistema Integrado")
+    
+    usuario = st.text_input("Usuário")
+    senha = st.text_input("Senha", type="password")
+    
+    if st.button("Entrar"):
+        # Você pode alterar o usuário e a senha abaixo para o que preferir
+        if usuario == "admin" and senha == "oficina123":
+            st.session_state["autenticado"] = True
+            st.rerun()
+        else:
+            st.error("Usuário ou senha incorretos!")
+            
+    st.stop() # Bloqueia o restante do sistema até que o login seja feito
+# -------------------------------------------
+
 # --- 1. CONFIGURAÇÃO DE CONEXÃO COM O SUPABASE ---
 SUPABASE_URL = "https://lgpcpnxhkogtvhjtfwya.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxncGNwbnhoa29ndHZoanRmd3lhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDA1NzAxNiwiZXhwIjoyMDk1NjMzMDE2fQ.84Otv9sBd7QDEfw8fPS15ybNK5_ps_ZGYR5PrBLKtKM"
