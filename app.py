@@ -1,13 +1,14 @@
 import streamlit as st
 
-# --- 1. CONTROLE DE ACESSO (TELA DE LOGIN) ---
+# Configuração da página (deve ser sempre a primeira coisa do Streamlit)
+st.set_page_config(layout="wide")
+
+# 1. CONTROLE DE ACESSO (TELA DE LOGIN)
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
 
-# Função que desenha a tela de login
 def tela_login():
     st.title("🔒 Acesso Restrito - Sistema Integrado")
-    
     usuario = st.text_input("Usuário")
     senha = st.text_input("Senha", type="password")
     
@@ -18,7 +19,7 @@ def tela_login():
         else:
             st.error("Usuário ou senha incorretos!")
 
-# --- 2. GERENCIAMENTO DE NAVEGAÇÃO ---
+# 2. GERENCIAMENTO DE NAVEGAÇÃO
 if not st.session_state["autenticado"]:
     # Se NÃO está logado, mostra apenas a tela de login e esconde o menu lateral
     pagina_login = st.Page(tela_login, title="Login", icon="🔒")
