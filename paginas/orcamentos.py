@@ -1,274 +1,385 @@
 import streamlit as st
-import pandas as pd
 from supabase import create_client, Client
-import re
 from fpdf import FPDF
-from validacoes import validar_placa, texto_valido, validar_valores
+import datetime
+import re
+import io
 
-# ==========================================
-# 🛠️ FUNÇÃO PARA FORMATAR TELEFONE
-# ==========================================
-def formatar_telefone(num):
-    apenas_numeros = re.sub(r'\D', '', num)
-    if len(apenas_numeros) == 11:
-        return f"({apenas_numeros[:2]}) {apenas_numeros[2:7]}-{apenas_numeros[7:]}"
-    elif len(apenas_numeros) == 10:
-        return f"({apenas_numeros[:2]}) {apenas_numeros[2:6]}-{apenas_numeros[6:]}"
-    return num
-
-# ==========================================
-# 🛠️ FUNÇÃO PARA GERAR O PDF DO ORÇAMENTO
-# ==========================================
-def gerar_pdf_orcamento_fpdf(cliente, telefone, veiculo, itens):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(190, 10, "ORCAMENTO - OFICINA", ln=True, align="C")
-    pdf.ln(10)
-    
-    pdf.set_font("Arial", "", 12)
-    pdf.cell(190, 8, f"Cliente: {cliente}", ln=True)
-    pdf.cell(190, 8, f"Telefone: {telefone}", ln=True)
-    pdf.cell(190, 8, f"Veiculo: {veiculo}", ln=True)
-    pdf.ln(10)
-    
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(90, 8, "Descricao", border=1)
-    pdf.cell(20, 8, "Qtd", border=1, align="C")
-    pdf.cell(40, 8, "Val. Unit.", border=1, align="R")
-    pdf.cell(40, 8, "Total", border=1, align="R")
-    pdf.ln()
-    
-    pdf.set_font("Arial", "", 12)
-    total_geral = 0
-    for item in itens:
-        desc = item.get("descricao", "")
-        qtd = item.get("quantidade", 1)
-        val_uni = item.get("valor_unitario", item.get("valor", 0.0))
-        val_tot = item.get("valor", 0.0)
-        total_geral += val_tot
-        
-        pdf.cell(90, 8, desc, border=1)
-        pdf.cell(20, 8, str(qtd), border=1, align="C")
-        pdf.cell(40, 8, f"R$ {val_uni:.2f}", border=1, align="R")
-        pdf.cell(40, 8, f"R$ {val_tot:.2f}", border=1, align="R")
-        pdf.ln()
-        
-    pdf.ln(5)
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(150, 8, "TOTAL GERAL: ", align="R")
-    pdf.cell(40, 8, f"R$ {total_geral:.2f}", border=1, align="R")
-    
-    # === CORREÇÃO DO ERRO AQUI ===
-    # Força o retorno a ser estritamente em 'bytes' para o Streamlit aceitar
-    try:
-        resultado = pdf.output()
-    except Exception:
-        resultado = pdf.output(dest='S')
-        
-    if isinstance(resultado, str):
-        return resultado.encode('latin1')
-    return bytes(resultado)
-
-# 1. Conexão com o Banco de Dados
+# ===================================================
+# 🔌 CONEXÃO COM O BANCO DE DADOS SUPABASE
+# ===================================================
 url = st.secrets["supabase_url"]
 key = st.secrets["supabase_key"]
 supabase: Client = create_client(url, key)
-# 2. Título da Página
-st.title("📄 Geração de Orçamentos")
 
-# =========================================================================
-st.header("📋 Gerador de Orçamentos da Oficina")
+# ===================================================
+# 📞 FUNÇÃO AUXILIAR: FORMATAR TELEFONE
+# ===================================================
+def formatar_telefone(num):
+    if not num:
+        return ""
+    penas_numeros = re.sub(r'\D', '', str(num))
+    if len(penas_numeros) == 11:
+        return f"({penas_numeros[:2]}) {penas_numeros[2:7]}-{penas_numeros[7:]}"
+    elif len(penas_numeros) == 10:
+        return f"({penas_numeros[:2]}) {penas_numeros[2:6]}-{penas_numeros[6:]}"
+    return num
 
-aba_criar, aba_historico = st.tabs(["📝 Criar Novo Orçamento", "📚 Histórico de Salvos"])
-
-if 'pecas_orcamento' not in st.session_state:
-    st.session_state.pecas_orcamento = []
-if 'edit_index' not in st.session_state:
-    st.session_state.edit_index = -1
-    
-with aba_criar:
-    c1, c2 = st.columns(2)
-    with c1:
-        orc_cliente = st.text_input("Nome do Cliente:", placeholder="Ex: Roberto Almeida")
-        orc_veiculo = st.text_input("Veículo ou Modelo do Câmbio:", placeholder="Ex: Amarok - Câmbio ZF8HP")
-    with c2:
-        orc_tel_input = st.text_input("Telefone do Cliente:", placeholder="Ex: 16988888888")
-        orc_tel = formatar_telefone(orc_tel_input)
+# ===================================================
+# 🎨 CLASSE PERSONALIZADA PARA O LAYOUT DO PDF
+# ===================================================
+class PDF_Oficina(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 16)
+        self.cell(0, 8, 'OFICINA MECANICA CENTRAL', ln=True, align='C')
         
-    st.markdown("---")
+        self.set_font('Arial', '', 10)
+        self.cell(0, 5, 'Rua dos Mecanicos, n 123 - Distrito Industrial', ln=True, align='C')
+        self.cell(0, 5, 'Telefone: (16) 99999-9999 | Email: contato@suaoficina.com', ln=True, align='C')
+        
+        self.ln(4)
+        self.line(10, self.get_y(), 200, self.get_y())
+        self.ln(6)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.cell(0, 10, f'Pagina {self.page_no()}', align='C')
+
+# ===================================================
+# ⚙️ FUNÇÃO PRINCIPAL: GERADOR DO PDF (CORRIGIDA)
+# ===================================================
+def gerar_pdf_orcamento_fpdf(nome, telefone, cpf, veiculo, lista_itens, total_geral):
+    pdf = PDF_Oficina(orientation='P', unit='mm', format='A4')
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
     
-    idx_editar = st.session_state.edit_index
+    pdf.set_font('Arial', 'B', 14)
+    data_atual = datetime.date.today().strftime('%d/%m/%Y')
+    pdf.cell(0, 10, f'ORDEM DE SERVICO / ORCAMENTO - DATA: {data_atual}', ln=True, align='L')
+    pdf.ln(2)
     
-    if idx_editar == -1:
-        st.subheader("🛠️ Adicionar Peças / Serviços")
-        col_p1, col_p2, col_p3 = st.columns([2, 1, 1])
-        with col_p1:
-            peca_desc = st.text_input("Descrição da Peça ou Serviço:", placeholder="Ex: Jogo de Juntas", key="add_p_desc")
-        with col_p2:
-            peca_qtd = st.number_input("Quantidade:", min_value=1, value=1, step=1, key="add_p_qtd")
-        with col_p3:
-            peca_val_unit = st.number_input("Valor Unitário (R$):", min_value=0.0, value=0.0, step=10.0, key="add_p_val")
+    pdf.set_fill_color(240, 240, 240)
+    pdf.set_font('Arial', 'B', 11)
+    pdf.cell(0, 6, ' DADOS DO CLIENTE E DO VEICULO', ln=True, fill=True)
+    
+    pdf.set_font('Arial', '', 10)
+    pdf.cell(0, 6, f"Cliente: {nome}", ln=True)
+    pdf.cell(0, 6, f"CPF: {cpf if cpf else 'Nao informado'}", ln=True)
+    pdf.cell(0, 6, f"Telefone: {formatar_telefone(telefone)}", ln=True)
+    pdf.cell(0, 6, f"Veiculo: {veiculo}", ln=True)
+    pdf.ln(6)
+    
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(80, 10, "Descricao", 1)
+    pdf.cell(25, 10, "Qtd", 1, align="C")
+    pdf.cell(40, 10, "Val. Unitario", 1, align="C")
+    pdf.cell(45, 10, "Total", 1, align="C")
+    pdf.ln(10)
+    
+    pdf.set_font("Arial", "", 12)
+    for item in lista_itens:
+        desc = item.get('descricao', '')[:38]
+        qtd = item.get('quantidade', 1)
+        val_unit = item.get('valor_unitario', 0.0)
+        subtotal = item.get('total', float(qtd) * float(val_unit))
+        
+        pdf.cell(80, 10, f" {desc}", 1)
+        pdf.cell(25, 10, str(qtd), 1, align="C")
+        pdf.cell(40, 10, f"R$ {val_unit:.2f}", 1, align="C")
+        pdf.cell(45, 10, f"R$ {subtotal:.2f}", 1, align="C")
+        pdf.ln(10)
+        
+    pdf.ln(2)
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(145, 10, "TOTAL GERAL: ", align="R")
+    pdf.cell(45, 10, f"R$ {total_geral:.2f}", 1, align="C", fill=True)
+    pdf.ln(15)
+    
+    if pdf.get_y() > 230:
+        pdf.add_page()
+        
+    pdf.set_font('Arial', '', 9)
+    termo = "Autorizo a realizacao dos servicos descritos acima e a aplicacao das pecas listadas."
+    pdf.cell(0, 5, termo, ln=True, align='C')
+    pdf.ln(12)
+    
+    pdf.line(45, pdf.get_y(), 165, pdf.get_y())
+    pdf.ln(2)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(0, 5, 'Assinatura do Cliente / Responsavel', ln=True, align='C')
+    
+    # 🌟 SOLUÇÃO DO ERRO AQUI:
+    # Captura o retorno do PDF de forma segura para evitar o erro de 'bytearray'
+    resultado_pdf = pdf.output(dest='S')
+    if isinstance(resultado_pdf, str):
+        return resultado_pdf.encode('latin1', errors='ignore')
+    return bytes(resultado_pdf)
+
+# ===================================================
+# 🖥️ INTERFACE DO USUÁRIO (STREAMLIT) - ABAS CRUD
+# ===================================================
+st.title("📋 Gerenciador de Orçamentos")
+
+aba_novo, aba_gerenciar = st.tabs(["🆕 Novo Orçamento", "🗂️ Gerenciar Orçamentos Salvos"])
+
+# --- ABA 1: NOVO ORÇAMENTO (CRIAR / SALVAR) ---
+with aba_novo:
+    if "itens_orcamento" not in st.session_state:
+        st.session_state.itens_orcamento = []
+
+    st.subheader("👤 Informações do Cliente e Veículo")
+
+    nome_padrao = ""
+    cpf_padrao = ""
+    telefone_padrao = ""
+    veiculo_padrao = ""
+
+    vincular_cliente = st.checkbox("🔗 Vincular a um cliente já cadastrado na Oficina", key="vinculo_novo")
+
+    if vincular_cliente:
+        try:
+            response = supabase.table("clientes").select("*").execute()
+            clientes_db = response.data
             
-        if st.button("➕ Adicionar Peça ao Orçamento"):
-            if peca_desc == "":
-                st.error("Digite a descrição da peça!")
-            else:
-                total_item = peca_qtd * peca_val_unit
-                st.session_state.pecas_orcamento.append({
-                    "descricao": peca_desc,
-                    "quantidade": int(peca_qtd),
-                    "valor_unitario": float(peca_val_unit),
-                    "valor": float(total_item)
-                })
-                st.success(f"'{peca_desc}' adicionado!")
-                st.rerun()
-    else:
-        st.subheader("✏️ Alterar Item Selecionado")
-        item_atual = st.session_state.pecas_orcamento[idx_editar]
-        col_p1, col_p2, col_p3 = st.columns([2, 1, 1])
-        with col_p1:
-            peca_desc = st.text_input("Descrição da Peça ou Serviço:", value=item_atual.get("descricao", ""), key="edit_p_desc")
-        with col_p2:
-            peca_qtd = st.number_input("Quantidade:", min_value=1, value=int(item_atual.get("quantidade", 1)), step=1, key="edit_p_qtd")
-        with col_p3:
-            val_inicial_unit = item_atual.get("valor_unitario", item_atual.get("valor", 0.0))
-            peca_val_unit = st.number_input("Valor Unitário (R$):", min_value=0.0, value=float(val_inicial_unit), step=10.0, key="edit_p_val")
-        
-        c_ed1, c_ed2 = st.columns(2)
-        with c_ed1:
-            if st.button("💾 Confirmar Alteração"):
-                if peca_desc == "":
-                    st.error("A descrição não pode ser vazia!")
-                else:
-                    st.session_state.pecas_orcamento[idx_editar] = {
-                        "descricao": peca_desc,
-                        "quantidade": int(peca_qtd),
-                        "valor_unitario": float(peca_val_unit),
-                        "valor": float(peca_qtd * peca_val_unit)
-                    }
-                    st.session_state.edit_index = -1
-                    st.success("Item updated!")
-                    st.rerun()
-        with c_ed2:
-            if st.button("❌ Cancelar Edição"):
-                st.session_state.edit_index = -1
-                st.rerun()
+            if clientes_db:
+                def formatar_opcao(c):
+                    nome = c.get("nome_cliente") or c.get("nome") or c.get("nome_completo") or c.get("cliente") or "Sem nome"
+                    veiculo = c.get("veiculo") or c.get("modelo") or c.get("carro") or c.get("veiculo_cliente") or "Sem veiculo"
+                    placa = c.get("placa") or c.get("placa_veiculo") or ""
+                    return f"{nome} | {veiculo} ({placa})" if placa else f"{nome} | {veiculo}"
                 
-    st.markdown("---")
-    
-    if st.session_state.pecas_orcamento:
-        st.markdown("### 📝 Itens incluídos:")
-        
-        c_h1, c_h2, c_h3, c_h4, c_h5, c_h6 = st.columns([3, 1, 1, 1, 0.6, 0.6])
-        c_h1.markdown("**Descrição**")
-        c_h2.markdown("**Qtd**")
-        c_h3.markdown("**Val. Unitário**")
-        c_h4.markdown("**Total Item**")
-        c_h5.markdown("**Editar**")
-        c_h6.markdown("**Excluir**")
-        st.markdown("<hr style='margin:0px 0px 10px 0px;'>", unsafe_allow_html=True)
-        
-        for index, item in enumerate(st.session_state.pecas_orcamento):
-            c_i1, c_i2, c_i3, c_i4, c_i5, c_i6 = st.columns([3, 1, 1, 1, 0.6, 0.6])
-            
-            qtd = item.get("quantidade", 1)
-            val_uni = item.get("valor_unitario", item["valor"])
-            val_tot = item["valor"]
-            
-            c_i1.write(item["descricao"])
-            c_i2.write(f"{qtd}")
-            c_i3.write(f"R$ {val_uni:.2f}")
-            c_i4.write(f"R$ {val_tot:.2f}")
-            
-            if c_i5.button("✏️", key=f"btn_edit_{index}"):
-                st.session_state.edit_index = index
-                st.rerun()
-            
-            if c_i6.button("❌", key=f"btn_del_{index}"):
-                if st.session_state.edit_index == index:
-                    st.session_state.edit_index = -1
-                elif st.session_state.edit_index > index:
-                    st.session_state.edit_index -= 1
-                st.session_state.pecas_orcamento.pop(index)
-                st.rerun()
-        
-        total_acumulado = sum(item['valor'] for item in st.session_state.pecas_orcamento)
-        st.markdown(f"### **Total Atual: R$ {total_acumulado:.2f}**")
-        
-        c_acao1, c_acao2, c_acao3 = st.columns(3)
-        with c_acao1:
-            if orc_cliente == "" or orc_veiculo == "":
-                st.warning("Preencha o nome do cliente e o veículo para liberar o PDF.")
-            else:
-                pdf_data = gerar_pdf_orcamento_fpdf(orc_cliente, orc_tel, orc_veiculo, st.session_state.pecas_orcamento)
-                st.download_button(
-                    label="📥 Baixar Orçamento em PDF",
-                    data=pdf_data,
-                    file_name=f"Orcamento_{orc_cliente.replace(' ', '_')}.pdf",
-                    mime="application/pdf"
+                cliente_selecionado = st.selectbox(
+                    "Selecione o cliente desejado:",
+                    options=clientes_db,
+                    format_func=formatar_opcao,
+                    key="select_cliente_novo"
                 )
-        with c_acao2:
-            if st.button("💾 Salvar no Sistema", key="btn_salvar_orcamento"):
-                if orc_cliente == "" or orc_veiculo == "":
-                    st.error("Erro: Preencha o Nome do Cliente e o Veículo antes de salvar!")
-                else:
-                    dados_salvar = {
-                        "cliente": orc_cliente,
-                        "veiculo": orc_veiculo,
-                        "telefone": orc_tel,
-                        "total": float(total_acumulado),
-                        "itens": st.session_state.pecas_orcamento
-                    }
-                    supabase.table("orcamentos_salvos").insert(dados_salvar).execute()
-                    st.success("✅ Orçamento salvo com sucesso no banco de dados!")
-        with c_acao3:
-            if st.button("🧹 Limpar Tudo / Novo Orçamento"):
-                st.session_state.pecas_orcamento = []
-                st.session_state.edit_index = -1
-                st.rerun()
                 
-with aba_historico:
-    st.subheader("📚 Histórico de Orçamentos Salvos")
-    
-    resposta_orc = supabase.table("orcamentos_salvos").select("*").order("id", desc=True).execute()
-    dados_orc = pd.DataFrame(resposta_orc.data)
-    
-    if not dados_orc.empty:
-        busca_orc = st.text_input("🔍 Buscar orçamento salvo por nome de cliente:", placeholder="Digite para pesquisar...")
-        if busca_orc:
-            dados_orc = dados_orc[dados_orc['cliente'].str.contains(busca_orc, case=False, na=False)]
+                if cliente_selecionado:
+                    nome_padrao = cliente_selecionado.get("nome_cliente") or cliente_selecionado.get("nome") or cliente_selecionado.get("nome_completo") or cliente_selecionado.get("cliente") or ""
+                    cpf_padrao = cliente_selecionado.get("cpf") or cliente_selecionado.get("cpf_cliente") or ""
+                    telefone_padrao = cliente_selecionado.get("telefone") or cliente_selecionado.get("whatsapp") or cliente_selecionado.get("celular") or ""
+                    
+                    v_mod = cliente_selecionado.get("veiculo") or cliente_selecionado.get("modelo") or cliente_selecionado.get("carro") or ""
+                    v_placa = cliente_selecionado.get("placa") or cliente_selecionado.get("placa_veiculo") or ""
+                    if v_mod and v_placa:
+                        veiculo_padrao = f"{v_mod} - Placa: {v_placa}"
+                    else:
+                        veiculo_padrao = v_mod if v_mod else v_placa
+        except Exception as e:
+            st.error(f"Erro ao carregar os clientes do Supabase: {e}")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        nome_cliente = st.text_input("Nome do Cliente", value=nome_padrao, placeholder="Ex: João da Silva", key="nome_n")
+        cpf_cliente = st.text_input("CPF do Cliente", value=cpf_padrao, placeholder="000.000.000-00", key="cpf_n")
+    with col2:
+        telefone_cliente = st.text_input("Telefone", value=telefone_padrao, placeholder="(16) 99721-0572", key="tel_n")
+        veiculo_cliente = st.text_input("Veículo / Modelo", value=veiculo_padrao, placeholder="Ex: Câmbio Crossfox", key="vei_n")
+
+    st.divider()
+
+    st.subheader("🛠️ Adicionar Itens ao Orçamento")
+    col_desc, col_qtd, col_val = st.columns([3, 1, 1])
+
+    with col_desc:
+        nova_descricao = st.text_input("Descrição da Peça ou Serviço", key="desc_n")
+    with col_qtd:
+        nova_qtd = st.number_input("Quantidade", min_value=1, value=1, step=1, key="qtd_n")
+    with col_val:
+        novo_valor = st.number_input("Valor Unitário (R$)", min_value=0.0, value=0.0, step=5.0, key="val_n")
+
+    if st.button("➕ Incluir Item na Lista", key="btn_add_n"):
+        if nova_descricao:
+            st.session_state.itens_orcamento.append({
+                "descricao": nova_descricao,
+                "quantidade": nova_qtd,
+                "valor_unitario": novo_valor,
+                "total": nova_qtd * novo_valor
+            })
+            st.success(f"'{nova_descricao}' adicionado com sucesso!")
+            st.rerun()
+        else:
+            st.warning("Por favor, digite uma descrição válida antes de adicionar.")
+
+    if st.session_state.itens_orcamento:
+        st.subheader("🛒 Itens Selecionados")
+        total_geral_calculado = 0.0
+        for idx, item in enumerate(st.session_state.itens_orcamento):
+            total_geral_calculado += item["total"]
+            st.text(f"{item['quantidade']}x  -  {item['descricao']}  -  R$ {item['valor_unitario']:.2f} (Total: R$ {item['total']:.2f})")
             
-        st.markdown("---")
-        for index, row in dados_orc.iterrows():
-            with st.expander(f"📋 {row['cliente']} — {row['veiculo']} (Total: R$ {row['total']:.2f})"):
-                st.markdown(f"**📞 Telefone:** {row['telefone']}")
-                
-                df_itens_salvos = pd.DataFrame(row['itens'])
-                if "quantidade" not in df_itens_salvos.columns:
-                    df_itens_salvos["quantidade"] = 1
-                if "valor_unitario" not in df_itens_salvos.columns:
-                    df_itens_salvos["valor_unitario"] = df_itens_salvos["valor"]
-                
-                df_itens_salvos = df_itens_salvos[["descricao", "quantidade", "valor_unitario", "valor"]]
-                df_itens_salvos.columns = ["Descrição", "Qtd", "Val. Unitário", "Total Item"]
-                df_itens_salvos.index = df_itens_salvos.index + 1
-                st.table(df_itens_salvos.style.format({"Val. Unitário": "R$ {:.2f}", "Total Item": "R$ {:.2f}"}))
-                
-                col_dl, col_del = st.columns([1, 4])
-                with col_dl:
-                    pdf_historico = gerar_pdf_orcamento_fpdf(row['cliente'], row['telefone'], row['veiculo'], row['itens'])
-                    st.download_button(
-                        label="📥 Baixar PDF",
-                        data=pdf_historico,
-                        file_name=f"Orcamento_{row['cliente'].replace(' ', '_')}.pdf",
-                        mime="application/pdf",
-                        key=f"dl_hist_{row['id']}"
-                    )
-                with col_del:
-                    if st.button("❌ Excluir do Histórico", key=f"del_hist_{row['id']}"):
-                        supabase.table("orcamentos_salvos").delete().eq("id", row['id']).execute()
-                        st.success("Orçamento removido do histórico!")
+        st.markdown(f"### **Valor Total Acumulado: R$ {total_geral_calculado:.2f}**")
+        
+        if st.button("🗑️ Limpar Lista de Itens", key="btn_limpar_n"):
+            st.session_state.itens_orcamento = []
+            st.rerun()
+
+        st.divider()
+
+        st.subheader("💾 Ações do Orçamento")
+        c_salvar, c_pdf = st.columns(2)
+        
+        with c_salvar:
+            if st.button("💾 Gravar Orçamento no Banco de Dados", key="btn_salvar_db"):
+                if not nome_cliente:
+                    st.error("Preencha o nome do cliente antes de gravar.")
+                else:
+                    try:
+                        dados_orcamento = {
+                            "nome_cliente": nome_cliente,
+                            "cpf_cliente": cpf_cliente if cpf_cliente else None,
+                            "telefone_cliente": telefone_cliente if telefone_cliente else None,
+                            "veiculo_cliente": veiculo_cliente if veiculo_cliente else None,
+                            "itens": st.session_state.itens_orcamento,
+                            "total_geral": total_geral_calculado
+                        }
+                        supabase.table("orcamentos_salvos").insert(dados_orcamento).execute()
+                        st.success("✔️ Orçamento gravado com sucesso no banco de dados!")
+                        st.session_state.itens_orcamento = []
                         st.rerun()
+                    except Exception as error:
+                        st.error(f"Erro ao salvar orçamento: {error}")
+                        
+        with c_pdf:
+            pdf_bytes = gerar_pdf_orcamento_fpdf(
+                nome=nome_cliente, telefone=telefone_cliente, cpf=cpf_cliente,
+                veiculo=veiculo_cliente, lista_itens=st.session_state.itens_orcamento,
+                total_geral=total_geral_calculado
+            )
+            st.download_button(
+                label="📥 Baixar Ordem de Serviço (PDF)",
+                data=pdf_bytes,
+                file_name=f"OS_{nome_cliente.replace(' ', '_')}_{datetime.date.today()}.pdf",
+                mime="application/pdf",
+                key="btn_pdf_n"
+            )
     else:
-        st.info("Nenhum orçamento foi salvo no sistema até o momento.")
+        st.info("Adicione pelo menos um item acima para habilitar as ações de salvar ou baixar PDF.")
+
+
+# --- ABA 2: GERENCIAR ORÇAMENTOS (VISUALIZAR, MODIFICAR, EXCLUIR) ---
+with aba_gerenciar:
+    st.subheader("🗂️ Modificar ou Excluir Orçamentos Gravados")
+    
+    try:
+        res_orcamentos = supabase.table("orcamentos_salvos").select("*").order("id", desc=True).execute()
+        orcamentos_db = res_orcamentos.data
+        
+        if orcamentos_db:
+            def formatar_orcamento_opcao(o):
+                id_o = o.get("id")
+                nome = o.get("nome_cliente") or "Sem Nome"
+                veiculo = o.get("veiculo_cliente") or "Sem Veículo"
+                total = o.get("total_geral", 0.0)
+                return f"OS #{id_o} - {nome} | {veiculo} (R$ {total:.2f})"
+                
+            orcamento_selecionado = st.selectbox(
+                "Selecione o Orçamento para Modificar ou Excluir:",
+                options=orcamentos_db,
+                format_func=formatar_orcamento_opcao,
+                key="select_orc_gerenciar"
+            )
+            
+            if orcamento_selecionado:
+                id_orcamento = orcamento_selecionado.get("id")
+                
+                if "edit_id" not in st.session_state or st.session_state.edit_id != id_orcamento:
+                    st.session_state.edit_id = id_orcamento
+                    st.session_state.itens_edicao = orcamento_selecionado.get("itens", [])
+                
+                st.markdown(f"### ⚙️ Editando Cadastro da OS #{id_orcamento}")
+                
+                col_e1, col_e2 = st.columns(2)
+                with col_e1:
+                    edit_nome = st.text_input("Nome do Cliente", value=orcamento_selecionado.get("nome_cliente", ""), key="edit_nome_f")
+                    edit_cpf = st.text_input("CPF do Cliente", value=orcamento_selecionado.get("cpf_cliente", ""), key="edit_cpf_f")
+                with col_e2:
+                    edit_telefone = st.text_input("Telefone", value=orcamento_selecionado.get("telefone_cliente", ""), key="edit_tel_f")
+                    edit_veiculo = st.text_input("Veículo / Modelo", value=orcamento_selecionado.get("veiculo_cliente", ""), key="edit_vei_f")
+                
+                st.write("#### 🛠️ Itens do Orçamento")
+                
+                col_col_d, col_col_q, col_col_v = st.columns([3, 1, 1])
+                with col_col_d:
+                    add_edit_desc = st.text_input("Adicionar nova peça/serviço:", key="add_edit_desc_f")
+                with col_col_q:
+                    add_edit_qtd = st.number_input("Qtd:", min_value=1, value=1, step=1, key="add_edit_qtd_f")
+                with col_col_v:
+                    add_edit_val = st.number_input("Valor Unitário:", min_value=0.0, value=0.0, step=5.0, key="add_edit_val_f")
+                    
+                if st.button("➕ Adicionar Item à Edição", key="btn_add_edit"):
+                    if add_edit_desc:
+                        st.session_state.itens_edicao.append({
+                            "descricao": add_edit_desc,
+                            "quantidade": add_edit_qtd,
+                            "valor_unitario": add_edit_val,
+                            "total": add_edit_qtd * add_edit_val
+                        })
+                        st.success("Item adicionado à lista de alteração!")
+                        st.rerun()
+                
+                total_edicao_calculado = 0.0
+                st.write("**Lista Atual de Itens:**")
+                
+                for idx, item in enumerate(st.session_state.itens_edicao):
+                    sub_total = item.get("quantidade", 1) * item.get("valor_unitario", 0.0)
+                    total_edicao_calculado += sub_total
+                    
+                    c_text, c_btn = st.columns([4, 1])
+                    c_text.text(f"- {item.get('quantidade')}x {item.get('descricao')} | R$ {item.get('valor_unitario'):.2f} (Total: R$ {sub_total:.2f})")
+                    if c_btn.button("❌ Remover", key=f"del_item_edit_{idx}"):
+                        st.session_state.itens_edicao.pop(idx)
+                        st.rerun()
+                
+                st.markdown(f"#### **Novo Total Evaluado: R$ {total_edicao_calculado:.2f}**")
+                st.divider()
+                
+                c_atualizar, c_excluir, c_pdf_e = st.columns(3)
+                
+                with c_atualizar:
+                    if st.button("🔄 Gravar Alterações (Modificar)", key="btn_update_db"):
+                        try:
+                            dados_atualizados = {
+                                "nome_cliente": edit_nome,
+                                "cpf_cliente": edit_cpf if edit_cpf else None,
+                                "telefone_cliente": edit_telefone if edit_telefone else None,
+                                "veiculo_cliente": edit_veiculo if edit_veiculo else None,
+                                "itens": st.session_state.itens_edicao,
+                                "total_geral": total_edicao_calculado
+                            }
+                            supabase.table("orcamentos_salvos").update(dados_atualizados).eq("id", id_orcamento).execute()
+                            st.success(f"✔️ Orçamento da OS #{id_orcamento} foi ATUALIZADO com sucesso!")
+                            st.rerun()
+                        except Exception as error:
+                            st.error(f"Erro ao modificar orçamento: {error}")
+                            
+                with c_excluir:
+                    if st.button("🗑️ Excluir Orçamento Definitivamente", key="btn_delete_db"):
+                        try:
+                            supabase.table("orcamentos_salvos").delete().eq("id", id_orcamento).execute()
+                            st.warning(f"🗑️ Orçamento da OS #{id_orcamento} foi EXCLUÍDO permanentemente!")
+                            if "itens_edicao" in st.session_state: del st.session_state.itens_edicao
+                            if "edit_id" in st.session_state: del st.session_state.edit_id
+                            st.rerun()
+                        except Exception as error:
+                            st.error(f"Erro ao excluir orçamento: {error}")
+                            
+                with c_pdf_e:
+                    pdf_bytes_e = gerar_pdf_orcamento_fpdf(
+                        nome=edit_nome, telefone=edit_telefone, cpf=edit_cpf,
+                        veiculo=edit_veiculo, lista_itens=st.session_state.itens_edicao,
+                        total_geral=total_edicao_calculado
+                    )
+                    st.download_button(
+                        label="📥 Baixar PDF Atualizado",
+                        data=pdf_bytes_e,
+                        file_name=f"OS_Atualizada_{id_orcamento}.pdf",
+                        mime="application/pdf",
+                        key="btn_pdf_e_download"
+                    )
+        else:
+            st.info("Nenhum orçamento salvo foi encontrado no banco de dados.")
+    except Exception as e:
+        st.error(f"Erro ao conectar com a tabela 'orcamentos_salvos': {e}")

@@ -1,139 +1,193 @@
 import streamlit as st
 import pandas as pd
-from supabase import create_client
+from supabase import create_client, Client
 
-# 🔍 LINHA DE DIAGNÓSTICO TEMPORÁRIA (Adicione esta linha aqui):
-st.write("Chaves que o Streamlit encontrou:", list(st.secrets.keys()))
-
-# 1️⃣ CONEXÃO COM O SUPABASE (Puxando do seu secrets.toml)
+# ==========================================
+# 🔌 CONEXÃO CONFIGURADA EXATAMENTE COMO SEU BANCO
+# ==========================================
 url = st.secrets["supabase_url"]
 key = st.secrets["supabase_key"]
-supabase = create_client(url, key)
-
-# Importa a função de validação que está no seu arquivo validacoes.py
-from validacoes import validar_valores
-
-st.header("📦 Gerenciamento de Estoque")
-
-# 2️⃣ CRIAÇÃO DAS ABAS DA PÁGINA
-aba_entrada, aba_saida = st.tabs(["📥 Entrada / Reposição", "📤 Dar Baixa em Peça"])
+supabase: Client = create_client(url, key)
 
 # ==========================================
-# ABA 1: ENTRADA E CADASTRO DE PRODUTOS
+# 📍 GERADOR DE OPÇÕES DE LOCALIZAÇÃO
 # ==========================================
-with aba_entrada:
-    st.write("### 📝 Preencha os dados do novo item:")
+lista_prateleiras = [chr(i) for i in range(ord('A'), ord('T') + 1)]
+lista_fileiras = list(range(1, 10))
+
+# Inicialização do estado de edição inline
+if 'id_editar_estoque' not in st.session_state:
+    st.session_state.id_editar_estoque = -1
+
+# Títulos da página
+st.title("📦 Controle de Estoque")
+st.header("📋 Gerenciamento de Peças e Componentes")
+
+# Abas de navegação
+aba_consulta, aba_cadastro = st.tabs(["🔍 Consultar e Gerenciar", "➕ Cadastrar Nova Peça"])
+
+# ===================================================
+# --- ABA 1: CONSULTAR E GERENCIAR ESTOQUE ---------
+# ===================================================
+with aba_consulta:
+    st.subheader("🔎 Painel Geral do Estoque")
     
-    col1, col2 = st.columns(2)
+    # Filtros de busca rápidos na tela
+    col_b1, col_b2, col_b3 = st.columns([2, 1, 1])
+    with col_b1:
+        busca_nome = st.text_input("Buscar por descrição da peça:", placeholder="Ex: Filtro de Linha")
+    with col_b2:
+        filtro_prateleira = st.selectbox("Filtrar por Prateleira:", ["Todas"] + lista_prateleiras)
+    with col_b3:
+        filtro_fileira = st.selectbox("Filtrar por Fileira:", ["Todas"] + [str(f) for f in lista_fileiras])
 
-    with col1:
-        nome_produto = st.text_input("Descrição do Produto", placeholder="Ex: Kit de Embreagem", key="add_nome").strip()
-        codigo_original = st.text_input("Código Original / Nº Montadora", placeholder="Ex: 5Z0141025", key="add_cod_orig").upper().strip()
-        marca = st.text_input("Marca/Fabricante", placeholder="Ex: LUK", key="add_marca").strip()
-        quantidade = st.number_input("Quantidade Inicial", min_value=0, value=0, step=1, key="add_qtd")
-        preco_custo = st.number_input("Preço de Custo (R$)", min_value=0.0, value=0.0, step=0.50, key="add_custo")
-
-    with col2:
-        ncm = st.text_input("Código NCM (8 dígitos)", max_chars=8, placeholder="Ex: 87082999", key="add_ncm").strip()
-        cest = st.text_input("Código CEST", max_chars=9, placeholder="Ex: 16.001.00", key="add_cest").strip()
-        csosn = st.text_input("Código CSOSN", max_chars=3, placeholder="Ex: 500", key="add_csosn").strip()
-        origem = st.selectbox("Origem da Mercadoria", ["0 - Nacional", "1 - Estrangeira", "2 - Adquirida no Mercado Interno"], key="add_origem").strip()
-        peso = st.number_input("Peso do Produto (Kg)", min_value=0.000, value=0.000, step=0.050, format="%.3f", key="add_peso")
-
-    st.markdown("---")
-
-    # Botão de Gravação com o Escudo de Erros ativado
-    if st.button("Gravar Novo Produto", key="btn_gravar"):
-        if nome_produto == "":
-            st.error("⚠️ O nome do produto é obrigatório!")
-        else:
-            # Roda as validações customizadas do seu projeto
-            valores_ok, msg_erro = validar_valores(quantidade, preco_custo)
-            if not valores_ok:
-                st.error(f"❌ {msg_erro}")
-                st.stop()
+    try:
+        # Puxa os dados respeitando a coluna 'descricao' do seu banco
+        resposta = supabase.table("estoque").select("*").order("descricao").execute()
+        dados_estoque = resposta.data
+        
+        if dados_estoque:
+            df = pd.DataFrame(dados_estoque)
             
-            dados_produto = {
-                "item": nome_produto,
-                "codigo_original": codigo_original,
-                "marca": marca,
-                "quantidade": quantidade,
-                "preco_custo": preco_custo,
-                "ncm": ncm,
-                "cest": cest,
-                "csosn": csosn,
-                "origem": origem,
-                "peso": peso
-            }
-            
-            # 🛡️ Escudo Corrigido para a tabela "estoque"
-            try:
-                supabase.table("estoque").insert(dados_produto).execute()
-                st.success("🎉 Produto validado e cadastrado com sucesso!")
-                st.rerun()
-            except Exception as erro:
-                print(f"--- ERRO CRÍTICO NO CADASTRO --- \n{erro}")
-                st.error("⚠️ Não foi possível salvar o produto. Verifique se o nome dos campos bate com o Supabase.")
-
-    st.markdown("---")
-
-with st.expander("🔄 Reposição de Estoque Existente", expanded=True):
-    st.write("### 🔄 Adicionar Peças ao Estoque:")
-    
-    # 🌟 Linhas internas avançadas corretamente (4 espaços)
-    resposta_entrada = supabase.table("estoque").select("id, descricao, quantidade").order("descricao").execute()
-    dados_produtos = pd.DataFrame(resposta_entrada.data)
-
-    if dados_produtos.empty:
-        st.info("Nenhum produto cadastrado para reposição.")
-    else:
-        # 🌟 Linhas internas do bloco else avançadas (8 espaços)
-        opcoes_entrada = {f"{row['descricao']} - Ult: {row['quantidade']}": row['id'] for index, row in dados_produtos.iterrows()}
-        selecao_entrada = st.selectbox("Escolha o produto que chegou:", list(opcoes_entrada.keys()), key="sel_reposicao")
-        
-        id_produto_reposicao = opcoes_entrada[selecao_entrada]
-        qtd_atual_banco = dados_produtos[dados_produtos['id'] == id_produto_reposicao]['quantidade'].values[0]
-        qtd_novas_pecas = st.number_input("Quantidade de peças:", min_value=1, value=1, step=1, key="qtd_reposicao")
-        
-        if st.button("Confirmar Entrada", key="btn_reposicao"):
-            nova_quantidade = int(qtd_atual_banco + qtd_novas_pecas)
-            
-            try:
-                supabase.table("estoque").update({"quantidade": nova_quantidade}).eq("id", id_produto_reposicao).execute()
-                st.success("✅ Estoque Atualizado com sucesso!")
-                st.rerun()
-            except Exception as erro:
-                print(f"--- ERRO CRÍTICO NA REPOSIÇÃO --- \n{erro}")
-                st.error("⚠️ Falha ao atualizar o estoque no servidor.")
-# ==========================================
-# ABA 2: SAÍDA / BAIXA DE PRODUTOS
-# ==========================================
-with aba_saida:
-    st.subheader("🛠️ Dar Baixa em Peça Utilizada")
-    
-    resposta_saida = supabase.table("estoque").select("id", "descricao", "quantidade").order("descricao").execute()
-    dados_saida = pd.DataFrame(resposta_saida.data)
-    
-    if dados_saida.empty:
-        st.info("Nenhum produto encontrado no estoque para dar baixa.")
-    else:
-        opcoes_saida = {f"{row['descricao']} - Atual: {row['quantidade']}": row['id'] for index, row in dados_saida.iterrows()}
-        selecao_saida = st.selectbox("Escolha o produto retirado:", list(opcoes_saida.keys()), key="sel_baixa")
-        
-        id_produto_saida = opcoes_saida[selecao_saida]
-        qtd_atual_saida_banco = dados_saida[dados_saida['id'] == id_produto_saida]['quantidade'].values[0]
-        qtd_retirada = st.number_input("Quantidade retirada:", min_value=1, value=1, step=1, key="qtd_baixa")
-        
-        if st.button("Confirmar Baixa", key="btn_baixa"):
-            if qtd_retirada > qtd_atual_saida_banco:
-                st.error("❌ Erro: Quantidade retirada é maior do que o saldo atual do estoque!")
+            # Filtros aplicados em tempo de execução
+            if busca_nome:
+                df = df[df['descricao'].str.contains(busca_nome, case=False, na=False)]
+            if filtro_prateleira != "Todas":
+                df = df[df['Prateleira'] == filtro_prateleira]
+            if filtro_fileira != "Todas":
+                df = df[df['Fileira'] == int(filtro_fileira)]
+                
+            if not df.empty:
+                st.markdown(f"**Peças encontradas:** {len(df)}")
+                st.markdown("---")
+                
+                for index, item in df.iterrows():
+                    item_id = item['id']
+                    
+                    # SE CLICOU EM EDITAR: Formulário de alteração baseado nas suas colunas reais
+                    if st.session_state.id_editar_estoque == item_id:
+                        st.markdown(f"#### 📝 Alterando Dados: {item['descricao']}")
+                        with st.form(f"form_edicao_{item_id}"):
+                            edit_desc = st.text_input("Descrição da Peça:", value=item.get('descricao', ''))
+                            
+                            c_ed1, c_ed2, c_ed3 = st.columns(3)
+                            with c_ed1:
+                                edit_cod = st.text_input("Código Original:", value=item.get('codigo_original', ''))
+                            with c_ed2:
+                                edit_marca = st.text_input("Marca:", value=item.get('marca', ''))
+                            with c_ed3:
+                                edit_ncm = st.text_input("NCM:", value=item.get('ncm', ''), max_chars=8)
+                                
+                            c_ed4, c_ed5 = st.columns(2)
+                            with c_ed4:
+                                edit_qtd = st.number_input("Quantidade:", min_value=0, value=int(item.get('quantidade', 0)))
+                            with c_ed5:
+                                idx_prat = lista_prateleiras.index(item['Prateleira']) if item.get('Prateleira') in lista_prateleiras else 0
+                                idx_fil = lista_fileiras.index(int(item['Fileira'])) if item.get('Fileira') in lista_fileiras else 0
+                                col_p, col_f = st.columns(2)
+                                edit_prat = col_p.selectbox("Prat.:", lista_prateleiras, index=idx_prat, key=f"p_{item_id}")
+                                edit_fil = col_f.selectbox("Fil.:", lista_fileiras, index=idx_fil, key=f"f_{item_id}")
+                                
+                            c_b_ed1, c_b_ed2 = st.columns(2)
+                            with c_b_ed1:
+                                if st.form_submit_button("💾 Salvar Alterações"):
+                                    if edit_desc.strip() == "":
+                                        st.error("A descrição não pode ser vazia.")
+                                    else:
+                                        supabase.table("estoque").update({
+                                            "descricao": edit_desc.strip(),
+                                            "codigo_original": edit_cod.strip(),
+                                            "marca": edit_marca.strip(),
+                                            "ncm": edit_ncm.strip(),
+                                            "quantidade": int(edit_qtd),
+                                            "Prateleira": edit_prat,
+                                            "Fileira": int(edit_fil)
+                                        }).eq("id", item_id).execute()
+                                        st.session_state.id_editar_estoque = -1
+                                        st.success("Item atualizado com sucesso!")
+                                        st.rerun()
+                            with c_b_ed2:
+                                if st.form_submit_button("❌ Cancelar"):
+                                    st.session_state.id_editar_estoque = -1
+                                    st.rerun()
+                        st.markdown("---")
+                    
+                    # MODO DE EXIBIÇÃO NORMAL (Em formato compactado expansível)
+                    else:
+                        with st.expander(f"📦 {item['descricao']} — Qtd: {item.get('quantidade', 0)} un"):
+                            col_info1, col_info2 = st.columns(2)
+                            with col_info1:
+                                st.markdown(f"**🔢 Código Original:** {item.get('codigo_original', 'Não Informado')}")
+                                st.markdown(f"**🏷️ Marca:** {item.get('marca', 'Não Informada')}")
+                            with col_info2:
+                                st.markdown(f"**📑 NCM:** {item.get('ncm', 'Não Cadastrado')}")
+                                st.markdown(f"**📍 Localização:** Prateleira {item.get('Prateleira','-')}, Fila {item.get('Fileira','-')}")
+                            
+                            c_btn1, c_btn2 = st.columns([1, 7])
+                            with c_btn1:
+                                if st.button("📝 Editar", key=f"btn_ed_{item_id}"):
+                                    st.session_state.id_editar_estoque = item_id
+                                    st.rerun()
+                            with c_btn2:
+                                if st.button("❌ Excluir Peça", key=f"btn_del_{item_id}"):
+                                    supabase.table("estoque").delete().eq("id", item_id).execute()
+                                    st.success("Peça removida com sucesso!")
+                                    st.rerun()
             else:
-                nova_qtd_saida = int(qtd_atual_saida_banco - qtd_retirada)
+                st.info("Nenhuma peça corresponde aos filtros aplicados.")
+        else:
+            st.info("Nenhuma peça cadastrada no estoque até o momento.")
+            
+    except Exception as e:
+        st.error(f"Erro ao carregar dados do Supabase: {e}")
+
+# ===================================================
+# --- ABA 2: CADASTRO DE NOVAS PEÇAS ---------------
+# ===================================================
+with aba_cadastro:
+    st.subheader("🚀 Inserir Novo Item no Estoque")
+    
+    with st.form("form_cadastro_estoque", clear_on_submit=True):
+        descricao = st.text_input("Descrição / Nome da Peça:", placeholder="Ex: Filtro do Câmbio Automático ZF 8HP")
+        
+        col_cad1, col_cad2, col_cad3 = st.columns(3)
+        with col_cad1:
+            codigo_original = st.text_input("Código Original:", placeholder="Ex: 0501218105")
+        with col_cad2:
+            marca = st.text_input("Marca da Peça:", placeholder="Ex: ZF / Fram")
+        with col_cad3:
+            ncm_peca = st.text_input("NCM (8 dígitos):", placeholder="Ex: 87082999", max_chars=8)
+            
+        col_cad4, col_cad5 = st.columns(2)
+        with col_cad4:
+            quantidade = st.number_input("Quantidade Inicial:", min_value=0, value=1, step=1)
+        with col_cad5:
+            st.markdown("##### 📍 Localização Física no Pátio")
+            col_loc1, col_loc2 = st.columns(2)
+            with col_loc1:
+                prateleira_selecionada = st.selectbox("Prateleira:", lista_prateleiras, key="cad_prat")
+            with col_loc2:
+                fileira_selecionada = st.selectbox("Fileira:", lista_fileiras, key="cad_fil")
+            
+        botao_salvar = st.form_submit_button("💾 Salvar no Sistema")
+        
+        if botao_salvar:
+            if descricao.strip() == "":
+                st.error("❌ Erro: Por favor, informe a descrição da peça antes de salvar!")
+            else:
+                # Dicionário mapeado perfeitamente com as colunas reais do seu Supabase
+                dados_peca = {
+                    "descricao": descricao.strip(),
+                    "codigo_original": codigo_original.strip(),
+                    "marca": marca.strip(),
+                    "ncm": ncm_peca.strip(),
+                    "quantidade": int(quantidade),
+                    "Prateleira": prateleira_selecionada,
+                    "Fileira": int(fileira_selecionada)
+                }
                 
                 try:
-                    supabase.table("estoque").update({"quantidade": nova_qtd_saida}).eq("id", id_produto_saida).execute()
-                    st.success("📉 Baixa registrada com sucesso!")
-                    st.rerun()
-                except Exception as erro:
-                    print(f"--- ERRO CRÍTICO NA BAIXA --- \n{erro}")
-                    st.error("⚠️ Falha ao registrar a baixa do estoque no servidor.")
+                    supabase.table("estoque").insert(dados_peca).execute()
+                    st.success(f"✔️ '{descricao}' cadastrado com sucesso!")
+                except Exception as e:
+                    st.error(f"Erro ao salvar no banco de dados: {e}")
