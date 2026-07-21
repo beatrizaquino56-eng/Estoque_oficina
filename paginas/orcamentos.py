@@ -31,11 +31,11 @@ def formatar_telefone(num):
 class PDF_Oficina(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 16)
-        self.cell(0, 8, 'OFICINA MECANICA CENTRAL', ln=True, align='C')
+        self.cell(0, 8, 'LAUD OFICINA MECANICA', ln=True, align='C')
         
         self.set_font('Arial', '', 10)
-        self.cell(0, 5, 'Rua dos Mecanicos, n 123 - Distrito Industrial', ln=True, align='C')
-        self.cell(0, 5, 'Telefone: (16) 99999-9999 | Email: contato@suaoficina.com', ln=True, align='C')
+        self.cell(0, 5, 'Avenida Maria Antonia Camargo De Oliveira, n 3053 - Vila Ferroviaria', ln=True, align='C')
+        self.cell(0, 5, 'Telefone: (16) 98811-2234 | Email: contato@laud.com.br', ln=True, align='C')
         
         self.ln(4)
         self.line(10, self.get_y(), 200, self.get_y())
