@@ -75,9 +75,14 @@ with aba_cad_cliente:
                 "defeito": defeito, 
                 "status": "Aguardando Diagnóstico"
             }
-            supabase.table("clientes").insert(novo_cliente).execute()
-            st.success(f"Sucesso! Registro de '{nome_cliente}' gravado com sucesso!")
-            st.rerun()
+            try:
+                supabase.table("clientes").insert(novo_cliente).execute()
+                st.success("✔️ Salvo com sucesso!")
+            except Exception as e:
+                st.error("❌ Erro retornado pelo Supabase:")
+                st.code(str(e))  # <--- Isso vai mostrar na tela o nome do campo errado!
+                st.success(f"Sucesso! Registro de '{nome_cliente}' gravado com sucesso!")
+                st.rerun()
             
 with aba_ver_clientes:
     st.subheader("📋 Veículos no Pátio")
